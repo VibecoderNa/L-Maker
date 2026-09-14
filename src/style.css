@@ -25,13 +25,11 @@ input[type="number"]::-webkit-outer-spin-button, input[type="number"]::-webkit-i
 
 .logo { font-size: 24px; font-weight: 700; color: var(--accent); margin-bottom: 30px; display: flex; align-items: center; gap: 10px; cursor: pointer; user-select: none; }
 
-/* 💡 수정됨: white-space: normal 과 word-break: keep-all 추가 */
 .nav-item { padding: 15px 20px; border-radius: 12px; cursor: pointer; color: var(--text-muted); font-weight: 600; transition: 0.2s; display: flex; align-items: center; gap: 15px; margin-bottom: 8px; white-space: normal; line-height: 1.4; word-break: keep-all; }
 .nav-item:hover, .nav-item.active { background: rgba(2, 132, 199, 0.1); color: var(--primary); }
 .sub-nav-menu { display: none; flex-direction: column; gap: 5px; background: #e2e8f0; padding: 10px; border-radius: 8px; margin: 0 20px 10px 20px; }
 .sub-nav-menu.active { display: flex; }
 
-/* 💡 수정됨: white-space: normal 과 word-break: keep-all 추가 */
 .sub-nav-item { padding: 10px 15px; border-radius: 8px; cursor: pointer; color: var(--text-muted); font-size: 13px; transition: 0.2s; white-space: normal; line-height: 1.4; word-break: keep-all; }
 .sub-nav-item:hover, .sub-nav-item.active { background: rgba(2, 132, 199, 0.1); color: var(--primary); }
 
@@ -86,11 +84,23 @@ button.accent-btn { background: var(--accent); color: #ffffff; }
 .st-detail-section { background: #f8fafc; border: 1px solid var(--border-color); border-radius: 12px; padding: 20px; margin-bottom: 20px; }
 .st-detail-section h4 { color: var(--primary); margin-top: 0; margin-bottom: 15px; border-bottom: 1px dashed var(--border-color); padding-bottom: 10px; }
 
-.level-header { text-align: center; padding: 30px; background: linear-gradient(145deg, #ffffff, #f1f5f9); border-radius: 16px; border: 1px solid var(--border-color); margin-bottom: 30px; box-shadow: 0 4px 10px rgba(0,0,0,0.05); }
+/* 💡 신규 추가됨: 교사 대시보드 슬라이드(Carousel) 스타일 */
+.carousel-wrapper { position: relative; width: 100%; border: 1px solid var(--border-color); border-radius: 12px; background: #ffffff; padding: 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.02); }
+.carousel-content { min-height: 200px; display: flex; align-items: center; justify-content: center; }
+.carousel-slide { display: none; width: 100%; }
+.carousel-slide.active { display: block; animation: fadeIn 0.3s ease-out; }
+.carousel-controls { display: flex; justify-content: space-between; align-items: center; margin-top: 15px; border-top: 1px dashed var(--border-color); padding-top: 15px; }
+.slide-btn { background: #f1f5f9; border: 1px solid var(--border-color); color: var(--text-main); padding: 8px 15px; border-radius: 8px; cursor: pointer; font-weight: bold; transition: 0.2s; }
+.slide-btn:hover { background: var(--primary); color: white; border-color: var(--primary); }
+.slide-counter { font-size: 14px; font-weight: bold; color: var(--text-muted); }
+
+/* 건물 건설, 지도 등 기본 스타일 유지 */
+.level-header { display: flex; flex-direction: column; justify-content: center; align-items: center; min-height: 180px; overflow: hidden; text-align: center; padding: 30px; background: linear-gradient(145deg, #ffffff, #f1f5f9); border-radius: 16px; border: 1px solid var(--border-color); margin-bottom: 30px; box-shadow: 0 4px 10px rgba(0,0,0,0.05); }
 .level-title { font-size: 32px; font-weight: 800; color: var(--accent); margin-bottom: 15px; text-shadow: 1px 1px 2px rgba(234, 88, 12, 0.2); }
 .progress-container { width: 100%; max-width: 600px; height: 20px; background: #e2e8f0; border-radius: 10px; margin: 0 auto; overflow: hidden; border: 1px solid var(--border-color); position: relative; }
 .progress-bar { height: 100%; background: var(--primary); width: 0%; transition: width 0.5s cubic-bezier(0.4, 0, 0.2, 1); }
 .progress-text { position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: bold; color: #ffffff; text-shadow: 1px 1px 2px rgba(0,0,0,0.4); }
+
 .building-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 20px; }
 .building-card { background: #ffffff; border: 1px solid var(--border-color); border-radius: 12px; padding: 20px; display: flex; flex-direction: column; transition: 0.3s; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
 .building-card:hover { transform: translateY(-5px); border-color: var(--primary); background: #f8fafc; box-shadow: 0 8px 15px rgba(0,0,0,0.08); }
@@ -173,3 +183,17 @@ input[type="color"]::-webkit-color-swatch { border: 2px solid rgba(0,0,0,0.1); b
 .ai-loading-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); backdrop-filter: blur(4px); z-index: 9999; display: none; justify-content: center; align-items: center; }
 .ai-loading-overlay.active { display: flex; animation: fadeIn 0.2s; }
 .ai-tip-box { background: white; padding: 40px; border-radius: 20px; text-align: center; max-width: 500px; box-shadow: 0 15px 35px rgba(0,0,0,0.2); }
+
+.pop-container { position: relative; margin-bottom: 10px; height: 70px; }
+.pop-icon { font-size: 55px; color: var(--primary); animation: popIn 0.5s cubic-bezier(0.68, -0.55, 0.265, 1.55) forwards, floatUp 0.8s ease-in-out infinite alternate; }
+.sparkle { position: absolute; color: #f59e0b; animation: twinkle 0.6s infinite alternate; }
+.s1 { top: -5px; left: -25px; font-size: 20px; animation-delay: 0s; }
+.s2 { top: 15px; right: -30px; font-size: 24px; color: #ec4899; animation-delay: 0.3s; }
+.s3 { bottom: -5px; left: -15px; font-size: 16px; color: #10b981; animation-delay: 0.1s; }
+
+@keyframes popIn { 0% { transform: scale(0); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
+@keyframes floatUp { 0% { transform: translateY(0px); } 100% { transform: translateY(-10px); } }
+@keyframes twinkle { 0% { transform: scale(0.5); opacity: 0.3; } 100% { transform: scale(1.2); opacity: 1; } }
+
+.fast-progress-box { width: 300px; height: 12px; background: #e2e8f0; border-radius: 10px; overflow: hidden; margin-top: 15px; }
+.fast-progress-fill { width: 0%; height: 100%; background: linear-gradient(90deg, #38bdf8, var(--primary)); transition: width 1s cubic-bezier(0.4, 0, 0.2, 1); }
