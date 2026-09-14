@@ -33,25 +33,27 @@ window.renderSharedProposals = function() {
         let deleteBtnHtml = window.isTeacherMode ? `<button class="delete-btn" onclick="event.stopPropagation(); window.deleteItem('proposal', ${index})"><i class="fa-solid fa-trash"></i></button>` : '';
         
         let statusBadge = '';
-        if(p.status === 'waiting') statusBadge = `<span style="background:#fef08a; color:#854d0e; padding:4px 8px; border-radius:4px; font-size:12px; font-weight:bold;">⏳ 교사 확인 대기중 (1차 통과)</span>`;
+        if(p.status === 'waiting') statusBadge = `<span style="background:#fef08a; color:#854d0e; padding:4px 8px; border-radius:4px; font-size:12px; font-weight:bold;">⏳ 선생님 확인 대기중</span>`;
         else if(p.status === 'approved') statusBadge = `<span style="background:#bbf7d0; color:#166534; padding:4px 8px; border-radius:4px; font-size:12px; font-weight:bold;">✅ 선생님 최종 승인</span>`;
         else if(p.status === 'rejected') statusBadge = `<span style="background:#fecaca; color:#991b1b; padding:4px 8px; border-radius:4px; font-size:12px; font-weight:bold;">❌ 재검토 요망</span>`;
 
-        let feedbackHtml = `<div style="font-size:13px; background:rgba(2, 132, 199, 0.05); padding:10px; border-radius:8px; border:1px solid rgba(2, 132, 199, 0.2); margin-top:10px;"><strong>🤖 AI 1차 의견:</strong> ${p.aiFeedback} <span style="color:var(--primary); font-weight:bold;">(기본 획득: ${p.aiBudget}G)</span></div>`;
+        let feedbackHtml = `<div style="font-size:13px; background:rgba(2, 132, 199, 0.05); padding:10px; border-radius:8px; border:1px solid rgba(2, 132, 199, 0.2); margin-top:10px;"><strong>🤖 AI 1차 의견:</strong> ${p.aiFeedback || ""} <span style="color:var(--primary); font-weight:bold;">(기본 획득: ${p.aiBudget || 0}G)</span></div>`;
         
         if(p.status !== 'waiting' && p.teacherFeedback) {
-            feedbackHtml += `<div style="font-size:13px; background:rgba(22, 163, 74, 0.05); padding:10px; border-radius:8px; border:1px solid rgba(22, 163, 74, 0.3); margin-top:10px;"><strong>👨‍🏫 선생님 피드백:</strong> ${p.teacherFeedback} <br><span style="color:var(--accent); font-weight:bold;">(+ 추가 예산: ${p.teacherBudget}G)</span></div>`;
+            feedbackHtml += `<div style="font-size:13px; margin-top:10px; background:rgba(22, 163, 74, 0.1); padding:10px; border-radius:6px; border:1px solid rgba(22, 163, 74, 0.3);"><strong>👨‍🏫 선생님 피드백:</strong> ${p.teacherFeedback} <br><span style="color:var(--accent); font-weight:bold;">(+ 추가 예산: ${p.teacherBudget || 0}G)</span></div>`;
         }
+
+        let safeProposal = p.proposal || "";
 
         board.innerHTML += `
         <div style="position:relative; background:#f8fafc; padding:20px; border-radius:12px; border:1px solid var(--border-color); display:flex; flex-direction:column; gap:10px;">
             ${deleteBtnHtml}
             <div style="display:flex; justify-content:space-between; align-items:center;">
-                <div class="author-tag" style="margin:0; font-size:14px;">👤 작성자: ${p.author}</div>
+                <div class="author-tag" style="margin:0; font-size:14px;">👤 작성자: ${p.author || "익명"}</div>
                 ${statusBadge}
             </div>
-            <strong style="color:var(--primary); font-size:16px;">주제: ${p.problem}</strong>
-            <div style="font-size:14px; line-height:1.6; background:#ffffff; padding:12px; border-radius:8px; border:1px solid #e2e8f0;">${p.proposal.replace(/\n/g, '<br>')}</div>
+            <strong style="color:var(--primary); font-size:16px;">주제: ${p.problem || "미지정"}</strong>
+            <div style="font-size:14px; line-height:1.6; background:#ffffff; padding:12px; border-radius:8px; border:1px solid #e2e8f0;">${safeProposal.replace(/\n/g, '<br>')}</div>
             <div style="margin-top:auto;">${feedbackHtml}</div>
         </div>`;
     });
@@ -70,7 +72,6 @@ document.addEventListener('change', function(e) {
     }
 });
 
-// 💡 수정됨: 슬로건 모음집 단계를 삭제하고 1번에서 2번 탭으로 바로 직행
 window.goToPromoStep2 = function() {
     const topic = document.getElementById('promoTopic').value.trim();
     const target = document.getElementById('promoTarget').value.trim();
@@ -80,16 +81,15 @@ window.goToPromoStep2 = function() {
         return alert("홍보 대상, 타겟 설정, 핵심 슬로건을 모두 작성해주세요.");
     }
     
-    // 2번째 탭 화면 상단에 내가 정한 내용 고정 표시
     document.getElementById('displayStrategyTopic').innerText = topic;
     document.getElementById('displayStrategyTarget').innerText = target;
     document.getElementById('displayStrategySlogan').innerText = `"${slogan}"`;
     
-    window.showNotification("전략 수립 완료! 멋진 포스터와 문구를 기획해보세요.");
+    window.showNotification("전략 수립 완료! 멋진 포스터와 기획안을 작성해보세요.");
     window.switchInnerTab('inner-promo-campaign', document.querySelectorAll('#stage2-1 .sub-tab-btn')[1]);
 }
 
-// 💡 수정됨: 이미지 첨부를 포함한 마케팅 캠페인 제출
+// 💡 수정됨: 제출 시 숫자 숨김 및 협의 중 텍스트 노출
 window.executeCampaign = async function() {
     const topic = document.getElementById('displayStrategyTopic').innerText;
     const target = document.getElementById('displayStrategyTarget').innerText;
@@ -116,7 +116,6 @@ window.executeCampaign = async function() {
         return alert(`예산이 부족합니다! (현재 보유 예산: ${window.gameState.budget}G / 필요 예산: ${cost}G)\n지도의 기호를 추가로 등록하거나 친구의 게시물에 좋아요를 받아보세요.`);
     }
 
-    // 💡 이미지 파일 업로드 처리
     let imageUrl = null;
     const photoFile = document.getElementById('promoImageInput').files[0];
     if(photoFile) {
@@ -128,17 +127,18 @@ window.executeCampaign = async function() {
 
     window.gameState.budget -= cost;
 
+    // 성과는 DB에만 저장
     const expectedVis = Math.floor(cost * (Math.random() * 0.5 + 0.8));
     const expectedRep = Math.floor((cost / 20) * (Math.random() * 0.5 + 0.8));
 
     const campaign = {
         id: Date.now(),
-        author: `${document.getElementById('numInput').value}번 학생`,
+        author: `${document.getElementById('numInput').value}번 시장님`,
         authorKey: window.userKey,
         topic: topic,
         target: target,
         slogan: slogan,
-        imageUrl: imageUrl, // 이미지 추가
+        imageUrl: imageUrl, 
         media: mediaName,
         cost: cost,
         content: content,
@@ -154,58 +154,67 @@ window.executeCampaign = async function() {
     window.renderSharedMarketingBoard();
 
     document.getElementById('campaignResultArea').style.display = 'block';
-    document.getElementById('campaignMetrics').innerHTML = `예상 방문객: <span style="color:#d97706">+${expectedVis}명</span> | 예상 평판: <span style="color:#ef4444">+${expectedRep}점</span>`;
-    document.getElementById('campaignFeedback').innerHTML = `<strong>🤖 AI 비서관:</strong> "${mediaName}" 매체를 활용한 훌륭한 전략입니다! 입력하신 예산 ${cost}G가 집행되었습니다. 선생님의 최종 확인을 기다려주세요.`;
+    
+    // 학생 화면에는 숫자(Metrics)를 비우고 피드백만 제공
+    document.getElementById('campaignFeedback').innerHTML = `
+        <div style="font-size:18px; margin-bottom:10px;"><strong>🤝 기획안 검토 중입니다!</strong></div>
+        "${mediaName}" 매체를 활용한 전략이 성공적으로 제출되었습니다.<br>
+        현재 👨‍🏫 <strong>선생님</strong>과 🤖 <strong>AI 홍보 담당관</strong>이 시장님의 전략을 검토하며 최종 성과를 의논하고 있습니다. 승인을 기다려주세요!
+    `;
     
     window.showNotification("캠페인이 성공적으로 제출되었습니다!");
 }
 
-// 💡 학생들끼리 보는 공유 게시판 (그리드 유지, 포스터 이미지 렌더링 포함)
 window.renderSharedMarketingBoard = function() {
     const board = document.getElementById('sharedMarketingBoard'); if(!board) return; board.innerHTML = '';
-    if(!window.gameState.marketingCampaigns || window.gameState.marketingCampaigns.length === 0) {
-        board.innerHTML = '<div style="color:var(--text-muted); grid-column:1/-1;">아직 등록된 마케팅 전략이 없습니다. 첫 번째 마케터가 되어보세요!</div>'; return;
+    
+    const approvedCampaigns = (window.gameState.marketingCampaigns || []).filter(c => c && c.status === 'approved');
+
+    if(approvedCampaigns.length === 0) {
+        board.innerHTML = '<div style="color:var(--text-muted); grid-column:1/-1;">아직 선생님이 최종 승인한 마케팅 전략이 없습니다. 멋진 기획을 올려 첫 번째 마케터가 되어보세요!</div>'; return;
     }
 
-    window.gameState.marketingCampaigns.forEach((c, index) => {
-        let statusBadge = c.status === 'waiting'
-            ? `<span style="background:#fef08a; color:#854d0e; padding:4px 8px; border-radius:4px; font-size:12px; font-weight:bold;">⏳ 선생님 확인 대기중</span>`
-            : `<span style="background:#bbf7d0; color:#166534; padding:4px 8px; border-radius:4px; font-size:12px; font-weight:bold;">✅ 성과 확정됨</span>`;
+    approvedCampaigns.forEach((c) => {
+        const hasLiked = c.likedBy && c.likedBy.includes(window.userKey);
+        let likeBtn = `<button style="background:${hasLiked ? 'var(--primary)' : '#f1f5f9'}; color:${hasLiked ? 'white' : 'var(--text-main)'}; border:1px solid var(--border-color); padding:8px 12px; border-radius:8px; cursor:pointer; font-weight:bold; margin-top:10px; width:100%; transition:0.2s;" onclick="window.likeCampaign(${c.id}, '${c.authorKey}')" ${hasLiked ? 'disabled' : ''}>
+            👍 친구 응원하기 (좋아요 ${c.likes || 0})
+        </button>`;
 
-        let likeBtn = '';
-        if(c.status === 'approved') {
-            const hasLiked = c.likedBy && c.likedBy.includes(window.userKey);
-            likeBtn = `<button style="background:${hasLiked ? 'var(--primary)' : '#f1f5f9'}; color:${hasLiked ? 'white' : 'var(--text-main)'}; border:1px solid var(--border-color); padding:8px 12px; border-radius:8px; cursor:pointer; font-weight:bold; margin-top:10px; width:100%; transition:0.2s;" onclick="window.likeCampaign(${c.id}, '${c.authorKey}')" ${hasLiked ? 'disabled' : ''}>
-                👍 친구 응원하기 (좋아요 ${c.likes || 0})
-            </button>`;
-        }
+        let imageHtml = c.imageUrl ? `<img src="${c.imageUrl}" style="width: 100%; max-height: 200px; object-fit: contain; background: #e2e8f0; border-radius: 8px; margin-bottom: 10px; border: 1px solid var(--border-color);">` : '';
+        
+        let safeContent = c.content || "";
+        let contentHtml = safeContent.replace(/\n/g, '<br>');
+        let safeTopic = c.topic || "미지정";
+        let safeTarget = c.target || "미지정";
+        let safeSlogan = c.slogan || "";
+        let safeMedia = c.media || "미지정";
+        
+        let metricsHtml = `<div style="background:rgba(2, 132, 199, 0.05); padding:10px; border-radius:8px; margin-top:10px; font-size:13px; text-align:center;">
+            <strong>🎉 확정 성과:</strong> 방문객 <span style="color:#d97706">+${c.expectedVisitor || 0}명</span> | 평판 <span style="color:#ef4444">+${c.expectedReputation || 0}점</span>
+        </div>`;
 
         let deleteBtnHtml = window.isTeacherMode ? `<button class="delete-btn" onclick="event.stopPropagation(); window.deleteItem('campaign', ${c.id})"><i class="fa-solid fa-trash"></i></button>` : '';
-
-        // 첨부된 포스터 이미지 렌더링
-        let imageHtml = c.imageUrl ? `<img src="${c.imageUrl}" style="width: 100%; max-height: 200px; object-fit: contain; background: #e2e8f0; border-radius: 8px; margin-bottom: 10px; border: 1px solid var(--border-color);">` : '';
-        let contentHtml = c.content.replace(/\n/g, '<br>');
-        
-        let metricsHtml = c.status === 'approved' ? `<div style="background:rgba(2, 132, 199, 0.05); padding:10px; border-radius:8px; margin-top:10px; font-size:13px; text-align:center;">
-            <strong>🎉 확정 성과:</strong> 방문객 <span style="color:#d97706">+${c.expectedVisitor}명</span> | 평판 <span style="color:#ef4444">+${c.expectedReputation}점</span>
-        </div>` : `<div style="background:#f1f5f9; padding:10px; border-radius:8px; margin-top:10px; font-size:12px; text-align:center; color:var(--text-muted);">선생님 확인 후 성과가 공개됩니다.</div>`;
 
         board.innerHTML += `
         <div style="position:relative; background:#ffffff; padding:20px; border-radius:12px; border:1px solid var(--border-color); box-shadow: 0 4px 6px rgba(0,0,0,0.05); display:flex; flex-direction:column; gap:10px;">
             ${deleteBtnHtml}
             <div style="display:flex; justify-content:space-between; align-items:center;">
-                <div class="author-tag" style="margin:0; font-size:14px;">👤 ${c.author}</div>
-                ${statusBadge}
+                <div class="author-tag" style="margin:0; font-size:14px;">👤 ${c.author || "익명"}</div>
+                <span style="background:#bbf7d0; color:#166534; padding:4px 8px; border-radius:4px; font-size:12px; font-weight:bold;">✅ 성과 확정됨</span>
             </div>
             
             ${imageHtml}
             
-            <div style="font-size: 13px; color: var(--text-muted);">대상: ${c.topic} | 타겟: ${c.target}</div>
-            <div style="font-size: 16px; font-weight: bold; color: var(--text-main); margin-bottom: 5px;">${c.slogan}</div>
+            <div style="font-size: 13px; color: var(--text-muted); background: #f8fafc; padding: 10px; border-radius: 8px; border: 1px solid var(--border-color); margin-bottom: 5px;">
+                <div style="margin-bottom: 3px;"><strong style="color:var(--primary);">🎯 홍보 대상:</strong> ${safeTopic}</div>
+                <div><strong style="color:var(--primary);">👥 타겟 설정:</strong> ${safeTarget}</div>
+            </div>
             
-            <div style="font-size:14px; line-height:1.6; background:#f8fafc; padding:12px; border-radius:8px; border:1px solid #e2e8f0; color:#1e293b;">${contentHtml}</div>
+            <div style="font-size: 16px; font-weight: bold; color: var(--text-main); margin-bottom: 5px; margin-top: 5px;">"${safeSlogan}"</div>
             
-            <div style="font-size:13px; color:var(--text-muted); margin-top: 5px;"><i class="fa-solid fa-bullhorn"></i> 매체: ${c.media} (${c.cost}G)</div>
+            <div style="font-size:14px; line-height:1.6; background:#ffffff; padding:12px; border-radius:8px; border:1px solid #e2e8f0; color:#1e293b;">${contentHtml}</div>
+            
+            <div style="font-size:13px; color:var(--text-muted); margin-top: 5px;"><i class="fa-solid fa-bullhorn"></i> 사용 매체: ${safeMedia} (${c.cost || 0}G)</div>
             
             ${metricsHtml}
             <div style="margin-top:auto;">
@@ -215,7 +224,6 @@ window.renderSharedMarketingBoard = function() {
     });
 }
 
-// 💡 학생 상호작용 좋아요 기능 유지
 window.likeCampaign = async function(id, targetAuthorKey) {
     if(window.isTeacherMode) return window.showNotification("선생님은 관전만 가능합니다 😊");
     

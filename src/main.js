@@ -5,7 +5,6 @@ import './api.js';
 import './teacher.js'; 
 import { doc, setDoc, getDoc, onSnapshot, collection, increment } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
 
-// ui.js에서 쉽게 파이어베이스 증가 함수를 쓸 수 있도록 전역 연결
 window.fsIncrement = increment;
 
 window.padletColors = ['var(--note-1)', 'var(--note-2)', 'var(--note-3)', 'var(--note-4)'];
@@ -22,7 +21,7 @@ window.buildingsData = [
 ];
 
 window.isTeacherMode = false; window.dynamicApiKey = ""; window.dynamicApiModel = "gemini-3.8-flash"; window.classKey = ''; window.userKey = ''; window.currentUserId = ''; 
-window.gameState = { budget: 500, visitorCount: 0, reputation: 0, satisfaction: 0, submittedProposals: [], problems: [], promoBoard: [], marketingCampaigns: [], builtBuildings: [], mapMarkers: [] };
+window.gameState = { budget: 500, visitorCount: 0, reputation: 0, satisfaction: 0, submittedProposals: [], problems: [], promoBoard: [], marketingCampaigns: [], builtBuildings: [], mapMarkers: [], mapCenter: null };
 window.currentSelectedProblem = null; window.currentSelectedPromo = null;
 window.allStudentsData = {}; window.classDataLoaded = false; window.studentDataLoaded = false;
 
@@ -115,12 +114,12 @@ window.initSystem = async function(isTeacherModeParam = false) {
     window.classDataLoaded = false; window.studentDataLoaded = false;
 
     if(!window.isTeacherMode) {
-        if(!fullCode) { document.getElementById('loadingScreen').style.display = 'none'; alert("지역과 학급코드 숫자 4자리를 모두 입력해주세요.\n(학급이 아직 없다면 선생님께 문의하세요.)"); return location.reload(); }
+        if(!fullCode) { document.getElementById('loadingScreen').style.display = 'none'; alert("지역과 학급코드 숫자 4자리를 모두 입력해주세요."); return location.reload(); }
         if(!n) { document.getElementById('loadingScreen').style.display = 'none'; alert("나의 번호를 입력해주세요."); return location.reload(); }
         
         try { 
             const classSnap = await getDoc(doc(db, "classes", fullCode)); 
-            if (!classSnap.exists()) { document.getElementById('loadingScreen').style.display = 'none'; alert("해당 학급 코드가 존재하지 않습니다.\n▶ 학생: 선생님에게 질문하거나 지역, 학급코드 및 번호를 다시 입력해보세요.\n▶ 선생님: 선생님! 관리자모드로 진입하여 우리반의 학급코드를 생성해주세요."); return location.reload(); } 
+            if (!classSnap.exists()) { document.getElementById('loadingScreen').style.display = 'none'; alert("해당 학급 코드가 존재하지 않습니다."); return location.reload(); } 
         } catch(e) { document.getElementById('loadingScreen').style.display = 'none'; alert("데이터베이스 연결 실패."); return location.reload(); }
         
         window.classKey = fullCode; window.userKey = n; window.currentUserId = n; window.dynamicApiKey = ""; window.dynamicApiModel = ""; 
@@ -128,7 +127,7 @@ window.initSystem = async function(isTeacherModeParam = false) {
         if (fullCode) {
             try {
                 const classSnap = await getDoc(doc(db, "classes", fullCode));
-                if (!classSnap.exists()) { document.getElementById('loadingScreen').style.display = 'none'; alert("입력하신 학급 코드가 존재하지 않습니다.\n새로운 학급을 개설하시려면 '지역'과 '코드'를 비워두고 로고를 5번 클릭하여 관리자 모드로 진입해주세요."); return location.reload(); }
+                if (!classSnap.exists()) { document.getElementById('loadingScreen').style.display = 'none'; alert("입력하신 학급 코드가 존재하지 않습니다."); return location.reload(); }
             } catch(e) { document.getElementById('loadingScreen').style.display = 'none'; alert("데이터베이스 연결 실패."); return location.reload(); }
             window.classKey = fullCode;
             window.dynamicApiKey = window.safeGetItem('local_maker_api_key') || "";
@@ -146,15 +145,23 @@ window.initSystem = async function(isTeacherModeParam = false) {
         document.getElementById('teacherApiKey').value = window.dynamicApiKey;
         document.getElementById('teacherApiModel').value = window.dynamicApiModel || "gemini-3.8-flash";
         
-        if(window.classKey === 'teacher_temp_global') { document.getElementById('monitorWarning').style.display = 'block'; document.getElementById('monitorGridView').style.display = 'none'; } else { document.getElementById('monitorClassTitle').innerText = fullCode; }
-
-        const setupCards = document.querySelectorAll('#inner-teacher-setup .card');
-        if (setupCards.length >= 2) {
-            const codeCard = setupCards[1];
-            if (window.classKey !== 'teacher_temp_global') {
-                const regionMap = { seoul:"서울특별시", gyeonggi:"경기도", incheon:"인천광역시", gangwon:"강원특별자치도", chungnam:"충청남도", chungbuk:"충청북도", daejeon:"대전광역시", sejong:"세종특별자치시", gyeongbuk:"경상북도", gyeongnam:"경상남도", daegu:"대구광역시", busan:"부산광역시", ulsan:"울산광역시", jeonbuk:"전북특별자치도", jeonnam:"전라남도", gwangju:"광주광역시", jeju:"제주특별자치도" };
-                let displayCode = window.classKey;
-                if(window.classKey.includes('_')) { const parts = window.classKey.split('_'); displayCode = (regionMap[parts[0]] || parts[0]) + " " + parts[1]; }
+        // 💡 수정됨: 학급 미개설 시 불필요한 카드 숨김 처리 로직 강화
+        if(window.classKey === 'teacher_temp_global') { 
+            document.getElementById('monitorWarning').style.display = 'block'; 
+            document.getElementById('monitorGridView').style.display = 'none'; 
+            document.getElementById('setupApiKeyCard').style.display = 'none'; 
+            document.getElementById('setupMapCard').style.display = 'none'; 
+        } else { 
+            document.getElementById('monitorClassTitle').innerText = fullCode; 
+            document.getElementById('setupApiKeyCard').style.display = 'block'; 
+            document.getElementById('setupMapCard').style.display = 'block'; 
+            
+            const regionMap = { seoul:"서울특별시", gyeonggi:"경기도", incheon:"인천광역시", gangwon:"강원특별자치도", chungnam:"충청남도", chungbuk:"충청북도", daejeon:"대전광역시", sejong:"세종특별자치시", gyeongbuk:"경상북도", gyeongnam:"경상남도", daegu:"대구광역시", busan:"부산광역시", ulsan:"울산광역시", jeonbuk:"전북특별자치도", jeonnam:"전라남도", gwangju:"광주광역시", jeju:"제주특별자치도" };
+            let displayCode = window.classKey;
+            if(window.classKey.includes('_')) { const parts = window.classKey.split('_'); displayCode = (regionMap[parts[0]] || parts[0]) + " " + parts[1]; }
+            
+            const codeCard = document.getElementById('setupClassCard');
+            if(codeCard) {
                 codeCard.innerHTML = `
                     <h3 style="margin-top:0;"><i class="fa-solid fa-school"></i> 현재 관리 중인 학급</h3>
                     <p style="color:var(--text-muted); font-size:13px;">선생님은 현재 아래 학급의 데이터를 실시간으로 모니터링하고 있습니다.</p>
@@ -182,14 +189,24 @@ window.initSystem = async function(isTeacherModeParam = false) {
                 window.gameState.problems = data.problems || []; 
                 window.gameState.submittedProposals = data.submittedProposals || []; 
                 window.gameState.promoBoard = data.promoBoard || []; 
-                window.gameState.marketingCampaigns = data.marketingCampaigns || []; // 💡 마케팅 데이터 연동
+                window.gameState.marketingCampaigns = data.marketingCampaigns || []; 
                 window.gameState.mapMarkers = data.mapMarkers || [];
                 
-                window.renderProblemBoard(); 
-                window.renderSharedProposals(); 
-                window.renderPromoBoard(); 
-                window.renderSharedMarketingBoard(); // 💡 마케팅 게시판 렌더링 호출
-                window.restoreMapMarkers();
+                if (data.mapCenter) {
+                    window.gameState.mapCenter = data.mapCenter;
+                }
+                
+                try { window.renderProblemBoard(); } catch(e) { console.error(e); }
+                try { window.renderSharedProposals(); } catch(e) { console.error(e); }
+                try { window.renderPromoBoard(); } catch(e) { console.error(e); }
+                try { window.renderSharedMarketingBoard(); } catch(e) { console.error(e); }
+                try { window.restoreMapMarkers(); } catch(e) { console.error(e); }
+
+                // 지도가 로드되어 있다면 중심점 이동
+                if(window.map && window.gameState.mapCenter) {
+                    window.map.panTo([window.gameState.mapCenter.lat, window.gameState.mapCenter.lng]);
+                }
+
                 if(window.isTeacherMode && document.getElementById('monitorDetailView').style.display === 'block') { const currentlyViewingNum = document.getElementById('dtNum').innerText; if(currentlyViewingNum) window.showStudentDetails(currentlyViewingNum); }
             }
         });
@@ -229,7 +246,7 @@ window.saveGameState = async function() {
             problems: window.gameState.problems, 
             submittedProposals: window.gameState.submittedProposals, 
             promoBoard: window.gameState.promoBoard, 
-            marketingCampaigns: window.gameState.marketingCampaigns, // 💡 마케팅 데이터 저장
+            marketingCampaigns: window.gameState.marketingCampaigns, 
             mapMarkers: window.gameState.mapMarkers 
         }, { merge: true });
         

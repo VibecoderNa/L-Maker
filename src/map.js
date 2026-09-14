@@ -1,8 +1,13 @@
 // ==========================================
 // 1단계: 기존 지도 그리기 (STAGE 1-1)
 // ==========================================
-const map = L.map('map', { zoomControl: false }).setView([36.6575, 128.4527], 14);
+
+// 💡 하드코딩된 특정 지역 좌표 제거. 서울을 초기값으로 잡되 DB 동기화 완료 시 해당 좌표로 이동함
+const initialLat = 37.5665; 
+const initialLng = 126.9780;
+const map = L.map('map', { zoomControl: false }).setView([initialLat, initialLng], 14);
 window.map = map;
+
 L.control.zoom({ position: 'bottomright' }).addTo(map);
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '&copy; OpenStreetMap contributors', maxZoom: 19 }).addTo(map);
 
@@ -142,6 +147,8 @@ window.toggleMapMenu = function(element) {
     menu.classList.toggle('active'); element.classList.add('active');
     document.getElementById('stage1Nav').classList.remove('active');
     document.getElementById('stage1SubMenu').classList.remove('active');
+    document.getElementById('stage2Nav').classList.remove('active');
+    document.getElementById('stage2SubMenu').classList.remove('active');
     
     if(menu.classList.contains('active')) {
         window.switchMapTab('stage-map-1', menu.querySelector('.sub-nav-item'), '1) 우리 지역의 지도를 완성해봐요');
@@ -167,7 +174,7 @@ window.switchMapTab = function(tabId, element, title) {
 }
 
 // ==========================================
-// 🧭 2-1 탭: 지도 상 거리와 방위 (Leaflet 2D + 패널 결과 UI 복구)
+// 🧭 2-1 탭: 지도 상 거리와 방위 (Leaflet 2D)
 // ==========================================
 window.geoMapInitStatus = false;
 let geoMapObj;
@@ -182,7 +189,12 @@ window.initGeoMap = function() {
         setTimeout(() => { geoMapObj.invalidateSize(); }, 100);
         return;
     }
-    geoMapObj = L.map('geoMap', { zoomControl: false }).setView([36.6575, 128.4527], 13);
+    
+    // 💡 2번 탭 지도 역시 DB에서 설정된 우리 반 좌표를 최우선으로 적용합니다.
+    const startLat = window.gameState.mapCenter ? window.gameState.mapCenter.lat : initialLat;
+    const startLng = window.gameState.mapCenter ? window.gameState.mapCenter.lng : initialLng;
+
+    geoMapObj = L.map('geoMap', { zoomControl: false }).setView([startLat, startLng], 13);
     L.control.zoom({ position: 'bottomright' }).addTo(geoMapObj);
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '&copy; OpenStreetMap contributors' }).addTo(geoMapObj);
     geoLayerGroup = L.layerGroup().addTo(geoMapObj);
@@ -224,13 +236,11 @@ function refreshGeoMarkers() {
     });
 }
 
-// 💡 탭을 가리지 않게 비대칭 여백 적용 유지
 function drawGeoPolyline() {
     if(geoPolyline) geoMapObj.removeLayer(geoPolyline);
     const latlngs = [window.geoSelection.a.latlng, window.geoSelection.b.latlng];
     geoPolyline = L.polyline(latlngs, {color: 'var(--accent)', weight: 4, dashArray: '5, 5'}).addTo(geoMapObj);
     
-    // 왼쪽 패널(약 380px)을 피해 지도의 중앙을 오른쪽으로 옮기고, 최대 확대 정도를 15로 제한
     geoMapObj.fitBounds(geoPolyline.getBounds(), {
         paddingTopLeft: [380, 50], 
         paddingBottomRight: [50, 50],
@@ -256,7 +266,7 @@ window.resetGeoSelection = function() {
         }
     });
 
-    document.getElementById('geoResultArea').style.display = 'none'; // 💡 결과창 숨기기
+    document.getElementById('geoResultArea').style.display = 'none'; 
     updateGeoSelectionUI();
 }
 
@@ -282,7 +292,6 @@ window.analyzeDistanceAndBearing = function() {
     const dirStr = dirs[Math.round(brng / 45) % 8];
     const distStr = dist > 1000 ? (dist/1000).toFixed(2) + ' km' : Math.round(dist) + ' m';
 
-    // 💡 결과창을 좌측 패널 안에 띄움 (원상 복구)
     document.getElementById('geoResultArea').style.display = 'block';
     document.getElementById('resPointA').innerText = window.geoSelection.a.placeName;
     document.getElementById('resPointB').innerText = window.geoSelection.b.placeName;
@@ -306,6 +315,10 @@ window.initElevMap = function() {
         return;
     }
 
+    // 💡 3D 지형 맵 역시 DB에서 설정된 우리 반 좌표를 최우선으로 적용합니다.
+    const startLat = window.gameState.mapCenter ? window.gameState.mapCenter.lat : initialLat;
+    const startLng = window.gameState.mapCenter ? window.gameState.mapCenter.lng : initialLng;
+
     elevMapObj = new maplibregl.Map({
         container: 'elevMap',
         style: {
@@ -323,7 +336,7 @@ window.initElevMap = function() {
             layers: [{ id: 'osm', type: 'raster', source: 'osm' }],
             terrain: { source: 'terrainSource', exaggeration: 2.0 }
         },
-        center: [128.4527, 36.6575],
+        center: [startLng, startLat], // MapLibre는 Lng, Lat 순서
         zoom: 13,
         pitch: 60,
         bearing: 0

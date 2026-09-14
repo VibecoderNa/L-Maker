@@ -29,7 +29,6 @@ input[type="number"]::-webkit-outer-spin-button, input[type="number"]::-webkit-i
 .nav-item:hover, .nav-item.active { background: rgba(2, 132, 199, 0.1); color: var(--primary); }
 .sub-nav-menu { display: none; flex-direction: column; gap: 5px; background: #e2e8f0; padding: 10px; border-radius: 8px; margin: 0 20px 10px 20px; }
 .sub-nav-menu.active { display: flex; }
-
 .sub-nav-item { padding: 10px 15px; border-radius: 8px; cursor: pointer; color: var(--text-muted); font-size: 13px; transition: 0.2s; white-space: normal; line-height: 1.4; word-break: keep-all; }
 .sub-nav-item:hover, .sub-nav-item.active { background: rgba(2, 132, 199, 0.1); color: var(--primary); }
 
@@ -84,7 +83,7 @@ button.accent-btn { background: var(--accent); color: #ffffff; }
 .st-detail-section { background: #f8fafc; border: 1px solid var(--border-color); border-radius: 12px; padding: 20px; margin-bottom: 20px; }
 .st-detail-section h4 { color: var(--primary); margin-top: 0; margin-bottom: 15px; border-bottom: 1px dashed var(--border-color); padding-bottom: 10px; }
 
-/* 💡 신규 추가됨: 교사 대시보드 슬라이드(Carousel) 스타일 */
+/* 교사 대시보드 슬라이드(Carousel) 스타일 */
 .carousel-wrapper { position: relative; width: 100%; border: 1px solid var(--border-color); border-radius: 12px; background: #ffffff; padding: 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.02); }
 .carousel-content { min-height: 200px; display: flex; align-items: center; justify-content: center; }
 .carousel-slide { display: none; width: 100%; }
@@ -93,6 +92,13 @@ button.accent-btn { background: var(--accent); color: #ffffff; }
 .slide-btn { background: #f1f5f9; border: 1px solid var(--border-color); color: var(--text-main); padding: 8px 15px; border-radius: 8px; cursor: pointer; font-weight: bold; transition: 0.2s; }
 .slide-btn:hover { background: var(--primary); color: white; border-color: var(--primary); }
 .slide-counter { font-size: 14px; font-weight: bold; color: var(--text-muted); }
+
+/* 💡 신규 추가됨: 학교 위치 검색 결과 UI 스타일 */
+.search-result-item { padding: 12px 15px; border-bottom: 1px solid var(--border-color); cursor: pointer; transition: 0.2s; text-align: left; }
+.search-result-item:hover { background: #f1f5f9; }
+.search-result-item:last-child { border-bottom: none; }
+.search-result-name { font-weight: 700; color: var(--text-main); font-size: 15px; margin-bottom: 4px; display: flex; align-items: center; gap: 8px; }
+.search-result-address { font-size: 13px; color: var(--text-muted); padding-left: 20px; line-height: 1.4; word-break: keep-all; }
 
 /* 건물 건설, 지도 등 기본 스타일 유지 */
 .level-header { display: flex; flex-direction: column; justify-content: center; align-items: center; min-height: 180px; overflow: hidden; text-align: center; padding: 30px; background: linear-gradient(145deg, #ffffff, #f1f5f9); border-radius: 16px; border: 1px solid var(--border-color); margin-bottom: 30px; box-shadow: 0 4px 10px rgba(0,0,0,0.05); }
