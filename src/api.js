@@ -1,4 +1,4 @@
-// api.js - Gemini AI 통신 및 로딩 팝업, 심사 제어
+// api.js - Gemini AI 통신 및 로딩 팝업, 심사 제어 (보안 개선 버전)
 
 const aiTips = [
     "우리가 내는 세금이 모여 지역 발전을 위한 소중한 '예산'이 됩니다.",
@@ -22,17 +22,33 @@ window.hideAILoading = function() {
     if(overlay) overlay.classList.remove('active');
 }
 
+// 💡 공통 통신 함수 (모든 요청을 Vercel 서버로 전송)
+async function requestToVercel(contents) {
+    if(!window.classKey) throw new Error("학급 정보가 없습니다.");
+    
+    // 나의 Vercel 서버리스 함수 주소로 요청 (API 키 포함 안 함!)
+    const backendUrl = '/api/gemini'; 
+    
+    const response = await window.fetchWithRetry(backendUrl, { 
+        method: 'POST', 
+        headers: { 'Content-Type': 'application/json' }, 
+        body: JSON.stringify({ 
+            classKey: window.classKey, 
+            model: window.dynamicApiModel || 'gemini-1.5-flash',
+            contents: contents 
+        }) 
+    });
+    
+    const data = await response.json();
+    if(!response.ok) throw new Error(data.error?.message || "서버 통신 에러");
+    return data;
+}
+
 window.getAIAdvice = async function() {
     const photoFile = document.getElementById('photoInput').files[0]; 
     const textData = document.getElementById('textDataInput').value.trim();
     
     if(!photoFile && !textData) return alert("이미지나 텍스트 자료 중 하나는 업로드해주세요.");
-    if(!window.dynamicApiKey) return alert("선생님께서 아직 API 시스템을 열지 않으셨습니다.");
-
-    // 💡 수정됨: 올바른 공식 모델명 gemini-3.8-flash 로 복구 (404 에러 방지)
-    const modelToUse = window.dynamicApiModel || 'gemini-3.8-flash';
-    const currentApiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${modelToUse}:generateContent?key=${window.dynamicApiKey}`;
-    
     window.showAILoading(); 
 
     try {
@@ -44,14 +60,9 @@ window.getAIAdvice = async function() {
             contents.push({ parts: [{ text: promptText }, { inlineData: imagePart.inlineData }] }); 
         } else { contents.push({ parts: [{ text: promptText }] }); }
         
-        const response = await window.fetchWithRetry(currentApiUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ contents: contents }) });
-        
-        if(!response.ok) {
-            const errData = await response.json();
-            throw new Error(errData.error?.message || "알 수 없는 API 에러 (모델 버전이 맞지 않을 수 있습니다)");
-        }
-
-        const resultText = (await response.json()).candidates[0].content.parts[0].text;
+        // Vercel 서버로 요청
+        const resultData = await requestToVercel(contents);
+        const resultText = resultData.candidates[0].content.parts[0].text;
         
         const adviceArea = document.getElementById('aiAdviceArea');
         adviceArea.style.display = 'block';
@@ -59,7 +70,7 @@ window.getAIAdvice = async function() {
         window.showNotification("AI 비서가 힌트를 주었습니다!");
     } catch (error) { 
         console.error("AI 통신 오류:", error);
-        alert(`통신 에러가 발생했습니다.\n(원인: ${error.message})\n\n선생님께 API 키 또는 모델 버전 상태를 확인해달라고 요청해주세요.`); 
+        alert(`통신 에러가 발생했습니다.\n(원인: ${error.message})\n\n선생님께 시스템 설정을 확인해달라고 요청해주세요.`); 
     } finally { 
         window.hideAILoading(); 
     }
@@ -108,24 +119,15 @@ window.submitProposal = async function() {
     const text = document.getElementById('proposalText').value; 
     const def = "[1. 문제 원인 분석]\n이 문제는 왜 발생했을까요?\n👉 \n\n[2. 구체적인 해결 방안]\n어떻게 해결할 수 있을지 아이디어를 적어주세요. (실현 가능성 고려)\n👉 \n\n[3. 기대 효과]\n문제가 해결되면 우리 지역 사람들에게 어떤 도움이 될까요? (공공성 고려)\n👉 \n";
     if(text === def || (text.replace(/\s+/g, '').length - def.replace(/\s+/g, '').length < 20)) return alert("해결 방안이 너무 짧습니다. 20자 이상 작성해주세요.");
-    if(!window.dynamicApiKey) return alert("API 시스템이 열리지 않았습니다.");
-
-    // 💡 수정됨
-    const modelToUse = window.dynamicApiModel || 'gemini-3.8-flash';
-    const currentApiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${modelToUse}:generateContent?key=${window.dynamicApiKey}`;
     
     window.showAILoading();
 
     try {
         const prompt = `깐깐한 지역 문제 심사관AI. 문제: '${window.currentSelectedProblem}', 내용: "${text}"\n평가기준: 1. 실현 가능성과 공공성. 장난이거나 비현실적이면 budget:0. 구체적이면 1차 통과. (단, 예산 budget은 문제 해결의 난이도와 창의성을 고려하여 반드시 100에서 500 사이의 정수로만 제한할 것).\n반드시 JSON 응답: {"feedback": "1차 심사 코멘트", "keywords": ["#키1"], "budget": 300}`;
-        const response = await window.fetchWithRetry(currentApiUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] }) });
+        const contents = [{ parts: [{ text: prompt }] }];
         
-        if(!response.ok) {
-            const errData = await response.json();
-            throw new Error(errData.error?.message || "알 수 없는 API 에러");
-        }
-
-        const resultText = (await response.json()).candidates[0].content.parts[0].text;
+        const resultData = await requestToVercel(contents);
+        const resultText = resultData.candidates[0].content.parts[0].text;
         const jsonStr = resultText.match(/\{[\s\S]*\}/)[0];
         const result = JSON.parse(jsonStr);
         const earnedBudget = result.budget || 0;
@@ -155,7 +157,7 @@ window.submitProposal = async function() {
         window.switchInnerTab('inner-explore', document.querySelectorAll('#stage1-1 .sub-tab-btn')[0]); window.switchTab('stage1-2', document.querySelectorAll('#stage1SubMenu .sub-nav-item')[1], '2) 반 해결방안 보기', true);
     } catch (error) { 
         console.error("AI 통신 오류:", error);
-        alert(`통신 에러가 발생했습니다.\n(원인: ${error.message})\n\n선생님께 API 키 상태를 확인해달라고 요청해주세요.`); 
+        alert(`통신 에러가 발생했습니다.\n(원인: ${error.message})`); 
     } finally { 
         window.hideAILoading(); 
     }
@@ -163,20 +165,17 @@ window.submitProposal = async function() {
 
 window.getAIConsulting = async function() {
     const topic = document.getElementById('promoTopic').value; const target = document.getElementById('promoTarget').value.trim(); const slogan = document.getElementById('promoSlogan').value.trim();
-    if(!topic || !target || !slogan) return alert("모두 입력해주세요."); if(!window.dynamicApiKey) return alert("API 시스템이 열리지 않았습니다.");
-
-    // 💡 수정됨
-    const modelToUse = window.dynamicApiModel || 'gemini-3.8-flash';
-    const currentApiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${modelToUse}:generateContent?key=${window.dynamicApiKey}`;
+    if(!topic || !target || !slogan) return alert("모두 입력해주세요."); 
     
     window.showAILoading();
 
     try {
         const prompt = `마케팅 AI. 주제:${topic}, 타겟:${target}, 슬로건:"${slogan}". JSON 응답: {"copywriting": ["문구1","문구2","문구3"], "imageConcept": "콘셉트"}`;
-        const response = await window.fetchWithRetry(currentApiUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] }) });
-        if(!response.ok) throw new Error((await response.json()).error?.message || "알 수 없는 API 에러");
-
-        const resultText = (await response.json()).candidates[0].content.parts[0].text;
+        const contents = [{ parts: [{ text: prompt }] }];
+        
+        const resultData = await requestToVercel(contents);
+        const resultText = resultData.candidates[0].content.parts[0].text;
+        
         const result = JSON.parse(resultText.match(/\{[\s\S]*\}/)[0]);
         document.getElementById('consultingText').innerHTML = `<strong><i class="fa-solid fa-pen-nib"></i> 카피라이팅</strong><ul style="margin: 10px 0; padding-left: 20px;">${result.copywriting.map(c => `<li style="margin-bottom:5px;">"${c}"</li>`).join('')}</ul><strong style="margin-top: 15px; display: inline-block;"><i class="fa-solid fa-palette"></i> 디자인 콘셉트</strong><div style="margin-top: 5px;">${result.imageConcept}</div>`;
         document.getElementById('consultingResult').style.display = 'block'; window.showNotification("컨설팅 도착!");
@@ -191,20 +190,15 @@ window.executeCampaign = async function() {
     if(!window.currentSelectedPromo) return alert("홍보물을 선택해주세요.");
     const checkedMedia = document.querySelector('input[name="mediaOption"]:checked'); if(!checkedMedia) return alert("매체를 선택해주세요.");
     const cost = parseInt(checkedMedia.value); if(window.gameState.budget < cost) return alert(`예산 부족!`);
-    if(!window.dynamicApiKey) return alert("API 시스템이 열리지 않았습니다.");
-
-    // 💡 수정됨
-    const modelToUse = window.dynamicApiModel || 'gemini-3.8-flash';
-    const currentApiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${modelToUse}:generateContent?key=${window.dynamicApiKey}`;
     
     window.showAILoading();
 
     try {
         const prompt = `마케팅 분석AI. 매체: ${checkedMedia.dataset.name} (비용: ${cost}G). 파급력을 투자 비용 대비 고효율로 평가해. (단, 방문객(visitorCount)은 매체 비용을 고려하여 반드시 100에서 500 사이의 정수로, 평판(reputation)은 반드시 10에서 60 사이의 정수로 넉넉하게 부여할 것). JSON 응답: {"feedback": "코멘트", "visitorCount": 정수, "reputation": 정수}`;
-        const response = await window.fetchWithRetry(currentApiUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] }) });
-        if(!response.ok) throw new Error((await response.json()).error?.message || "알 수 없는 API 에러");
-
-        const resultText = (await response.json()).candidates[0].content.parts[0].text;
+        const contents = [{ parts: [{ text: prompt }] }];
+        
+        const resultData = await requestToVercel(contents);
+        const resultText = resultData.candidates[0].content.parts[0].text;
         const result = JSON.parse(resultText.match(/\{[\s\S]*\}/)[0]);
 
         window.gameState.budget -= cost; window.gameState.visitorCount += result.visitorCount; window.gameState.reputation += result.reputation; window.updateUI();

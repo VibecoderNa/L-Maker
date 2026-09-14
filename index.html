@@ -165,7 +165,6 @@
                 <div id="stage-teacher" class="tab-panel">
                     <div class="sub-tabs" style="margin-bottom: 30px;">
                         <button class="sub-tab-btn active" onclick="window.switchInnerTab('inner-teacher-setup', this)"><i class="fa-solid fa-gear"></i> 시스템 설정</button>
-                        <!-- 💡 수정됨: '학생 모니터링 및 심사' -> '학생 모니터링' -->
                         <button class="sub-tab-btn" onclick="window.switchInnerTab('inner-teacher-monitor', this)"><i class="fa-solid fa-users-viewfinder"></i> 학생 모니터링</button>
                     </div>
 
@@ -180,12 +179,32 @@
                             </div>
                             <p style="color:var(--text-muted); font-size:12px; margin-top:8px;">※ 구글 모델 버전이 업데이트될 경우 모델명에서 숫자(예: 1.5, 2.0 등)만 변경하여 사용할 수 있습니다. (안정화 기본값: gemini-1.5-flash)</p>
                         </div>
+                        
                         <div class="card">
                             <h3 style="margin-top:0;"><i class="fa-solid fa-school"></i> 우리 지역 학급코드 개설 및 확인</h3>
                             <p style="color:var(--text-muted); font-size:13px;">학생들이 로그인할 때 사용하는 지역과 고유 코드입니다.</p>
-                            <div id="generatedCodeDisplay" style="margin-top:10px; background:rgba(2, 132, 199, 0.1); border:1px solid var(--primary); padding:20px; border-radius:12px; text-align:center;">
+                            
+                            <!-- 💡 수정됨: 지역 선택 드롭다운과 학급 개설 버튼 비율 1:1로 조정 -->
+                            <div style="display:flex; gap:10px; margin-top:15px; margin-bottom:15px;">
+                                <select id="teacherRegionSelect" style="flex:1; margin-bottom:0;">
+                                    <option value="" disabled selected>👉 학교가 위치한 지역 선택</option>
+                                    <option value="seoul">서울특별시</option><option value="gyeonggi">경기도</option><option value="incheon">인천광역시</option>
+                                    <option value="gangwon">강원특별자치도</option><option value="chungnam">충청남도</option><option value="chungbuk">충청북도</option>
+                                    <option value="daejeon">대전광역시</option><option value="sejong">세종특별자치시</option><option value="gyeongbuk">경상북도</option>
+                                    <option value="gyeongnam">경상남도</option><option value="daegu">대구광역시</option><option value="busan">부산광역시</option>
+                                    <option value="ulsan">울산광역시</option><option value="jeonbuk">전북특별자치도</option><option value="jeonnam">전라남도</option>
+                                    <option value="gwangju">광주광역시</option><option value="jeju">제주특별자치도</option>
+                                </select>
+                                <button class="action-btn accent-btn" style="flex:1; margin-top:0;" onclick="window.generateClassCode()">학급 개설하기</button>
+                            </div>
+
+                            <div id="generatedCodeDisplay" style="display:none; margin-top:10px; background:rgba(2, 132, 199, 0.1); border:1px solid var(--primary); padding:20px; border-radius:12px; text-align:center;">
                                 <div style="color:var(--text-main); font-size:15px; margin-bottom:10px;">현재 관리 중인 학급코드</div>
                                 <div id="displayFinalCode" style="font-size:36px; font-weight:800; color:var(--primary); letter-spacing: 5px;"></div>
+                                <!-- 💡 수정됨: alert 창을 대신하여 표시되는 깔끔한 안내 박스 -->
+                                <div style="font-size:13px; color:var(--text-muted); margin-top:15px; background: #ffffff; padding: 12px; border-radius: 8px; border: 1px dashed var(--primary); text-align: left; line-height: 1.5;">
+                                    <strong style="color:var(--primary);">💡 필수 안내:</strong> 발급된 학급 코드로 다시 로그인한 후, 시스템 설정 탭에서 반드시 <strong>'API 키'</strong>를 저장해주세요.<br>저장하지 않으면 학급 내 AI 시스템(분석, 심사 등)이 정상적으로 작동하지 않습니다.
+                                </div>
                             </div>
                         </div>
                     </div>
