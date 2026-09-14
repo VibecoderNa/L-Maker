@@ -1,4 +1,4 @@
-// src/api.js - Gemini AI 통신 및 로딩 팝업, 심사 제어
+// src/api.js - Gemini AI 직접 통신 (서버리스 롤백 버전)
 
 const aiTips = [
     "우리가 내는 세금이 모여 지역 발전을 위한 소중한 '예산'이 됩니다.",
@@ -22,30 +22,37 @@ window.hideAILoading = function() {
     if(overlay) overlay.classList.remove('active');
 }
 
-// 💡 백엔드 서버로 요청을 보내는 핵심 함수
-async function requestToVercel(contents) {
+// 💡 롤백: 프론트엔드에서 직접 파이어베이스를 조회하고 제미나이와 통신하는 함수
+async function callGeminiDirectly(contents) {
     if(!window.classKey) throw new Error("학급 정보가 없습니다.");
     
-    // 로컬 환경인지 확인
-    const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+    // 1. 파이어베이스에서 선생님의 API 키 가져오기
+    const PROJECT_ID = "l-maker"; 
+    const firestoreUrl = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents/classes/${window.classKey}`;
     
-    // 선생님의 Vercel 실제 주소가 자동으로 적용됩니다.
-    const vercelProdUrl = 'https://l-maker.vercel.app/api/gemini';
-    const backendUrl = isLocal ? vercelProdUrl : '/api/gemini'; 
+    const dbRes = await window.fetchWithRetry(firestoreUrl);
+    const dbData = await dbRes.json();
     
-    const response = await window.fetchWithRetry(backendUrl, { 
+    if (!dbData.fields || !dbData.fields.apiKey || !dbData.fields.apiKey.stringValue) {
+        throw new Error("등록되지 않은 학급이거나 선생님의 Gemini API 키가 설정되지 않았습니다.");
+    }
+    
+    const apiKey = dbData.fields.apiKey.stringValue;
+    const modelToUse = window.dynamicApiModel || 'gemini-1.5-flash';
+    
+    // 2. 구글 제미나이 서버로 직접 요청 보내기
+    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${modelToUse}:generateContent?key=${apiKey}`;
+    
+    const geminiRes = await window.fetchWithRetry(geminiUrl, { 
         method: 'POST', 
         headers: { 'Content-Type': 'application/json' }, 
-        body: JSON.stringify({ 
-            classKey: window.classKey, 
-            model: window.dynamicApiModel || 'gemini-3.8-flash',
-            contents: contents 
-        }) 
+        body: JSON.stringify({ contents: contents }) 
     });
     
-    const data = await response.json();
-    if(!response.ok) throw new Error(data.error?.message || "서버 통신 에러");
-    return data;
+    const geminiData = await geminiRes.json();
+    if(!geminiRes.ok) throw new Error(geminiData.error?.message || "서버 통신 에러");
+    
+    return geminiData;
 }
 
 window.getAIAdvice = async function() {
@@ -64,7 +71,7 @@ window.getAIAdvice = async function() {
             contents.push({ parts: [{ text: promptText }, { inlineData: imagePart.inlineData }] }); 
         } else { contents.push({ parts: [{ text: promptText }] }); }
         
-        const resultData = await requestToVercel(contents);
+        const resultData = await callGeminiDirectly(contents);
         const resultText = resultData.candidates[0].content.parts[0].text;
         
         const adviceArea = document.getElementById('aiAdviceArea');
@@ -129,7 +136,7 @@ window.submitProposal = async function() {
         const prompt = `깐깐한 지역 문제 심사관AI. 문제: '${window.currentSelectedProblem}', 내용: "${text}"\n평가기준: 1. 실현 가능성과 공공성. 장난이거나 비현실적이면 budget:0. 구체적이면 1차 통과. (단, 예산 budget은 문제 해결의 난이도와 창의성을 고려하여 반드시 100에서 500 사이의 정수로만 제한할 것).\n반드시 JSON 응답: {"feedback": "1차 심사 코멘트", "keywords": ["#키1"], "budget": 300}`;
         const contents = [{ parts: [{ text: prompt }] }];
         
-        const resultData = await requestToVercel(contents);
+        const resultData = await callGeminiDirectly(contents);
         const resultText = resultData.candidates[0].content.parts[0].text;
         const jsonStr = resultText.match(/\{[\s\S]*\}/)[0];
         const result = JSON.parse(jsonStr);
@@ -176,7 +183,7 @@ window.getAIConsulting = async function() {
         const prompt = `마케팅 AI. 주제:${topic}, 타겟:${target}, 슬로건:"${slogan}". JSON 응답: {"copywriting": ["문구1","문구2","문구3"], "imageConcept": "콘셉트"}`;
         const contents = [{ parts: [{ text: prompt }] }];
         
-        const resultData = await requestToVercel(contents);
+        const resultData = await callGeminiDirectly(contents);
         const resultText = resultData.candidates[0].content.parts[0].text;
         
         const result = JSON.parse(resultText.match(/\{[\s\S]*\}/)[0]);
@@ -200,7 +207,7 @@ window.executeCampaign = async function() {
         const prompt = `마케팅 분석AI. 매체: ${checkedMedia.dataset.name} (비용: ${cost}G). 파급력을 투자 비용 대비 고효율로 평가해. (단, 방문객(visitorCount)은 매체 비용을 고려하여 반드시 100에서 500 사이의 정수로, 평판(reputation)은 반드시 10에서 60 사이의 정수로 넉넉하게 부여할 것). JSON 응답: {"feedback": "코멘트", "visitorCount": 정수, "reputation": 정수}`;
         const contents = [{ parts: [{ text: prompt }] }];
         
-        const resultData = await requestToVercel(contents);
+        const resultData = await callGeminiDirectly(contents);
         const resultText = resultData.candidates[0].content.parts[0].text;
         const result = JSON.parse(resultText.match(/\{[\s\S]*\}/)[0]);
 
