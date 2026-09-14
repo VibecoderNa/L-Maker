@@ -22,25 +22,19 @@ window.hideAILoading = function() {
     if(overlay) overlay.classList.remove('active');
 }
 
-// 💡 롤백: 프론트엔드에서 직접 파이어베이스를 조회하고 제미나이와 통신하는 함수
+// 💡 수정됨: 파이어베이스 재요청(404 에러 원인)을 제거하고 전역 변수 사용
 async function callGeminiDirectly(contents) {
     if(!window.classKey) throw new Error("학급 정보가 없습니다.");
     
-    // 1. 파이어베이스에서 선생님의 API 키 가져오기
-    const PROJECT_ID = "l-maker"; 
-    const firestoreUrl = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents/classes/${window.classKey}`;
-    
-    const dbRes = await window.fetchWithRetry(firestoreUrl);
-    const dbData = await dbRes.json();
-    
-    if (!dbData.fields || !dbData.fields.apiKey || !dbData.fields.apiKey.stringValue) {
-        throw new Error("등록되지 않은 학급이거나 선생님의 Gemini API 키가 설정되지 않았습니다.");
+    // main.js에서 이미 동기화해 둔 API 키를 그대로 사용
+    const apiKey = window.dynamicApiKey;
+    if (!apiKey) {
+        throw new Error("선생님의 Gemini API 키가 시스템 설정에 저장되지 않았습니다.");
     }
     
-    const apiKey = dbData.fields.apiKey.stringValue;
     const modelToUse = window.dynamicApiModel || 'gemini-3.8-flash';
     
-    // 2. 구글 제미나이 서버로 직접 요청 보내기
+    // 구글 제미나이 서버로 직접 요청 보내기
     const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${modelToUse}:generateContent?key=${apiKey}`;
     
     const geminiRes = await window.fetchWithRetry(geminiUrl, { 
@@ -174,49 +168,31 @@ window.submitProposal = async function() {
 }
 
 window.getAIConsulting = async function() {
-    const topic = document.getElementById('promoTopic').value; const target = document.getElementById('promoTarget').value.trim(); const slogan = document.getElementById('promoSlogan').value.trim();
-    if(!topic || !target || !slogan) return alert("모두 입력해주세요."); 
+    const topic = document.getElementById('promoTopic').value.trim(); 
+    const target = document.getElementById('promoTarget').value.trim(); 
+    const slogan = document.getElementById('promoSlogan').value.trim();
+    
+    if(!topic || !target) return alert("홍보 대상과 타겟을 먼저 입력해주세요."); 
     
     window.showAILoading();
 
     try {
-        const prompt = `마케팅 AI. 주제:${topic}, 타겟:${target}, 슬로건:"${slogan}". JSON 응답: {"copywriting": ["문구1","문구2","문구3"], "imageConcept": "콘셉트"}`;
+        let prompt = "";
+        if (slogan) {
+            prompt = `마케팅 AI. 주제:'${topic}', 타겟:'${target}', 슬로건:"${slogan}". 학생이 작성한 슬로건을 발전시킨 매력적인 카피라이팅 3가지와 디자인 콘셉트를 제안해. JSON 응답: {"copywriting": ["문구1","문구2","문구3"], "imageConcept": "콘셉트"}`;
+        } else {
+            prompt = `마케팅 AI. 주제:'${topic}', 타겟:'${target}'. 학생이 아직 슬로건을 정하지 못했어. 주제와 타겟에 맞는 매력적인 카피라이팅(슬로건) 3가지와 디자인 콘셉트를 추천해. JSON 응답: {"copywriting": ["문구1","문구2","문구3"], "imageConcept": "콘셉트"}`;
+        }
+
         const contents = [{ parts: [{ text: prompt }] }];
         
         const resultData = await callGeminiDirectly(contents);
         const resultText = resultData.candidates[0].content.parts[0].text;
         
         const result = JSON.parse(resultText.match(/\{[\s\S]*\}/)[0]);
-        document.getElementById('consultingText').innerHTML = `<strong><i class="fa-solid fa-pen-nib"></i> 카피라이팅</strong><ul style="margin: 10px 0; padding-left: 20px;">${result.copywriting.map(c => `<li style="margin-bottom:5px;">"${c}"</li>`).join('')}</ul><strong style="margin-top: 15px; display: inline-block;"><i class="fa-solid fa-palette"></i> 디자인 콘셉트</strong><div style="margin-top: 5px;">${result.imageConcept}</div>`;
-        document.getElementById('consultingResult').style.display = 'block'; window.showNotification("컨설팅 도착!");
-    } catch (error) { 
-        alert(`통신 에러가 발생했습니다.\n(원인: ${error.message})`); 
-    } finally { 
-        window.hideAILoading(); 
-    }
-}
-
-window.executeCampaign = async function() {
-    if(!window.currentSelectedPromo) return alert("홍보물을 선택해주세요.");
-    const checkedMedia = document.querySelector('input[name="mediaOption"]:checked'); if(!checkedMedia) return alert("매체를 선택해주세요.");
-    const cost = parseInt(checkedMedia.value); if(window.gameState.budget < cost) return alert(`예산 부족!`);
-    
-    window.showAILoading();
-
-    try {
-        const prompt = `마케팅 분석AI. 매체: ${checkedMedia.dataset.name} (비용: ${cost}G). 파급력을 투자 비용 대비 고효율로 평가해. (단, 방문객(visitorCount)은 매체 비용을 고려하여 반드시 100에서 500 사이의 정수로, 평판(reputation)은 반드시 10에서 60 사이의 정수로 넉넉하게 부여할 것). JSON 응답: {"feedback": "코멘트", "visitorCount": 정수, "reputation": 정수}`;
-        const contents = [{ parts: [{ text: prompt }] }];
-        
-        const resultData = await callGeminiDirectly(contents);
-        const resultText = resultData.candidates[0].content.parts[0].text;
-        const result = JSON.parse(resultText.match(/\{[\s\S]*\}/)[0]);
-
-        window.gameState.budget -= cost; window.gameState.visitorCount += result.visitorCount; window.gameState.reputation += result.reputation; window.updateUI();
-        document.getElementById('campaignMetrics').innerHTML = `<span style="color: #d97706;"><i class="fa-solid fa-users"></i> 방문객 ${result.visitorCount}명 유치</span> | <span style="color: #ef4444;"><i class="fa-solid fa-star"></i> 평판 ${result.reputation}점 획득</span>`;
-        document.getElementById('campaignFeedback').innerHTML = result.feedback; document.getElementById('campaignResultArea').style.display = 'block';
-        window.showNotification(`마케팅 성공!`);
-        window.currentSelectedPromo = null; checkedMedia.checked = false; document.getElementById('selectedPromoDisplay').style.display = 'none';
-        document.querySelectorAll('#promoBoardArea .board-item-selectable').forEach(el => el.classList.remove('selected'));
+        document.getElementById('consultingText').innerHTML = `<strong><i class="fa-solid fa-pen-nib"></i> AI 추천 카피라이팅</strong><ul style="margin: 10px 0; padding-left: 20px;">${result.copywriting.map(c => `<li style="margin-bottom:5px;">"${c}"</li>`).join('')}</ul><strong style="margin-top: 15px; display: inline-block;"><i class="fa-solid fa-palette"></i> 디자인 콘셉트</strong><div style="margin-top: 5px;">${result.imageConcept}</div>`;
+        document.getElementById('consultingResult').style.display = 'block'; 
+        window.showNotification("컨설팅 도착!");
     } catch (error) { 
         alert(`통신 에러가 발생했습니다.\n(원인: ${error.message})`); 
     } finally { 

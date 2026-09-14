@@ -3,7 +3,10 @@ import './map.js';
 import './ui.js';   
 import './api.js';     
 import './teacher.js'; 
-import { doc, setDoc, getDoc, onSnapshot, collection } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
+import { doc, setDoc, getDoc, onSnapshot, collection, increment } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
+
+// ui.js에서 쉽게 파이어베이스 증가 함수를 쓸 수 있도록 전역 연결
+window.fsIncrement = increment;
 
 window.padletColors = ['var(--note-1)', 'var(--note-2)', 'var(--note-3)', 'var(--note-4)'];
 window.districtLevels = [{ threshold: 0, name: "🌱 첫걸음을 뗀 우리 마을" }, { threshold: 40, name: "🏡 온기가 생겨나는 이웃 동네" }, { threshold: 135, name: "✨ 활력이 넘치는 자급자족 도시" }, { threshold: 290, name: "🌈 모두를 포용하는 스마트 그린 도시" }, { threshold: 540, name: "🌍 지속 가능한 미래형 모범 지역" }];
@@ -19,7 +22,7 @@ window.buildingsData = [
 ];
 
 window.isTeacherMode = false; window.dynamicApiKey = ""; window.dynamicApiModel = "gemini-3.8-flash"; window.classKey = ''; window.userKey = ''; window.currentUserId = ''; 
-window.gameState = { budget: 500, visitorCount: 0, reputation: 0, satisfaction: 0, submittedProposals: [], problems: [], promoBoard: [], builtBuildings: [], mapMarkers: [] };
+window.gameState = { budget: 500, visitorCount: 0, reputation: 0, satisfaction: 0, submittedProposals: [], problems: [], promoBoard: [], marketingCampaigns: [], builtBuildings: [], mapMarkers: [] };
 window.currentSelectedProblem = null; window.currentSelectedPromo = null;
 window.allStudentsData = {}; window.classDataLoaded = false; window.studentDataLoaded = false;
 
@@ -100,7 +103,6 @@ window.initSystem = async function(isTeacherModeParam = false) {
         "도시를 건설할 때는 경제 발전뿐만 아니라 환경과 사람들의 행복(만족도)도 함께 생각하는 '지속 가능한 발전'이 중요합니다."
     ];
     
-    // 💡 수정됨: 교사 모드에서도 로딩 팁이 항상 정상적으로 표시되도록 구조 보호
     const loadingTipElement = document.getElementById('loadingTip');
     if(loadingTipElement) {
         loadingTipElement.parentElement.style.display = 'block'; 
@@ -177,8 +179,17 @@ window.initSystem = async function(isTeacherModeParam = false) {
                 const data = docSnap.data(); 
                 if (data.apiKey) window.dynamicApiKey = data.apiKey; 
                 if (data.apiModel) window.dynamicApiModel = data.apiModel; 
-                window.gameState.problems = data.problems || []; window.gameState.submittedProposals = data.submittedProposals || []; window.gameState.promoBoard = data.promoBoard || []; window.gameState.mapMarkers = data.mapMarkers || [];
-                window.renderProblemBoard(); window.renderSharedProposals(); window.renderPromoBoard(); window.restoreMapMarkers();
+                window.gameState.problems = data.problems || []; 
+                window.gameState.submittedProposals = data.submittedProposals || []; 
+                window.gameState.promoBoard = data.promoBoard || []; 
+                window.gameState.marketingCampaigns = data.marketingCampaigns || []; // 💡 마케팅 데이터 연동
+                window.gameState.mapMarkers = data.mapMarkers || [];
+                
+                window.renderProblemBoard(); 
+                window.renderSharedProposals(); 
+                window.renderPromoBoard(); 
+                window.renderSharedMarketingBoard(); // 💡 마케팅 게시판 렌더링 호출
+                window.restoreMapMarkers();
                 if(window.isTeacherMode && document.getElementById('monitorDetailView').style.display === 'block') { const currentlyViewingNum = document.getElementById('dtNum').innerText; if(currentlyViewingNum) window.showStudentDetails(currentlyViewingNum); }
             }
         });
@@ -214,7 +225,22 @@ window.saveGameState = async function() {
     if(!window.isTeacherMode && (!window.classDataLoaded || !window.studentDataLoaded)) return;
     if(window.isTeacherMode && !window.classDataLoaded) return;
     try {
-        await setDoc(doc(db, "classes", window.classKey), { problems: window.gameState.problems, submittedProposals: window.gameState.submittedProposals, promoBoard: window.gameState.promoBoard, mapMarkers: window.gameState.mapMarkers }, { merge: true });
-        if(!window.isTeacherMode) { await setDoc(doc(db, "classes", window.classKey, "students", window.userKey), { budget: window.gameState.budget, visitorCount: window.gameState.visitorCount, reputation: window.gameState.reputation, satisfaction: window.gameState.satisfaction, builtBuildings: window.gameState.builtBuildings }, { merge: true }); }
+        await setDoc(doc(db, "classes", window.classKey), { 
+            problems: window.gameState.problems, 
+            submittedProposals: window.gameState.submittedProposals, 
+            promoBoard: window.gameState.promoBoard, 
+            marketingCampaigns: window.gameState.marketingCampaigns, // 💡 마케팅 데이터 저장
+            mapMarkers: window.gameState.mapMarkers 
+        }, { merge: true });
+        
+        if(!window.isTeacherMode) { 
+            await setDoc(doc(db, "classes", window.classKey, "students", window.userKey), { 
+                budget: window.gameState.budget, 
+                visitorCount: window.gameState.visitorCount, 
+                reputation: window.gameState.reputation, 
+                satisfaction: window.gameState.satisfaction, 
+                builtBuildings: window.gameState.builtBuildings 
+            }, { merge: true }); 
+        }
     } catch (e) { console.error("DB 저장 에러:", e); }
 }
