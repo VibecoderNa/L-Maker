@@ -38,7 +38,7 @@ async function requestToVercel(contents) {
         headers: { 'Content-Type': 'application/json' }, 
         body: JSON.stringify({ 
             classKey: window.classKey, 
-            model: window.dynamicApiModel || 'gemini-1.5-flash',
+            model: window.dynamicApiModel || 'gemini-3.8-flash',
             contents: contents 
         }) 
     });

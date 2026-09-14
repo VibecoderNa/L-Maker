@@ -33,7 +33,7 @@ export default async function handler(req, res) {
         }
 
         const apiKey = dbData.fields.apiKey.stringValue;
-        const modelToUse = model || 'gemini-1.5-flash';
+        const modelToUse = model || 'gemini-3.8-flash';
         
         const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${modelToUse}:generateContent?key=${apiKey}`;
 
