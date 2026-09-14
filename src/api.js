@@ -38,7 +38,7 @@ async function callGeminiDirectly(contents) {
     }
     
     const apiKey = dbData.fields.apiKey.stringValue;
-    const modelToUse = window.dynamicApiModel || 'gemini-1.5-flash';
+    const modelToUse = window.dynamicApiModel || 'gemini-3.8-flash';
     
     // 2. 구글 제미나이 서버로 직접 요청 보내기
     const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${modelToUse}:generateContent?key=${apiKey}`;
