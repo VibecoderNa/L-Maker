@@ -1,4 +1,4 @@
-// api.js - Gemini AI 통신 및 로딩 팝업, 심사 제어 (보안 개선 버전)
+// src/api.js - Gemini AI 통신 및 로딩 팝업, 심사 제어
 
 const aiTips = [
     "우리가 내는 세금이 모여 지역 발전을 위한 소중한 '예산'이 됩니다.",
@@ -22,12 +22,16 @@ window.hideAILoading = function() {
     if(overlay) overlay.classList.remove('active');
 }
 
-// 💡 공통 통신 함수 (모든 요청을 Vercel 서버로 전송)
+// 💡 백엔드 서버로 요청을 보내는 핵심 함수
 async function requestToVercel(contents) {
     if(!window.classKey) throw new Error("학급 정보가 없습니다.");
     
-    // 나의 Vercel 서버리스 함수 주소로 요청 (API 키 포함 안 함!)
-    const backendUrl = '/api/gemini'; 
+    // 로컬 환경인지 확인
+    const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+    
+    // 선생님의 Vercel 실제 주소가 자동으로 적용됩니다.
+    const vercelProdUrl = 'https://l-maker.vercel.app/api/gemini';
+    const backendUrl = isLocal ? vercelProdUrl : '/api/gemini'; 
     
     const response = await window.fetchWithRetry(backendUrl, { 
         method: 'POST', 
@@ -60,7 +64,6 @@ window.getAIAdvice = async function() {
             contents.push({ parts: [{ text: promptText }, { inlineData: imagePart.inlineData }] }); 
         } else { contents.push({ parts: [{ text: promptText }] }); }
         
-        // Vercel 서버로 요청
         const resultData = await requestToVercel(contents);
         const resultText = resultData.candidates[0].content.parts[0].text;
         
