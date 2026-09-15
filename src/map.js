@@ -2,10 +2,10 @@
 // 1단계: 기존 지도 그리기 (STAGE 1-1)
 // ==========================================
 
-// 💡 하드코딩된 특정 지역 좌표 제거. 서울을 초기값으로 잡되 DB 동기화 완료 시 해당 좌표로 이동함
 const initialLat = 37.5665; 
 const initialLng = 126.9780;
-const map = L.map('map', { zoomControl: false }).setView([initialLat, initialLng], 14);
+// 💡 초기 줌 레벨 16 적용 (동네 골목이 잘 보이도록)
+const map = L.map('map', { zoomControl: false }).setView([initialLat, initialLng], 16);
 window.map = map;
 
 L.control.zoom({ position: 'bottomright' }).addTo(map);
@@ -140,6 +140,75 @@ window.editMarker = function(id) {
 };
 
 // ==========================================
+// 💡 [신규] 우리 학교로 돌아가기 (홈 버튼) 기능
+// ==========================================
+window.goToSchoolCenter = function(targetMapName) {
+    const targetLat = window.gameState.mapCenter ? window.gameState.mapCenter.lat : initialLat;
+    const targetLng = window.gameState.mapCenter ? window.gameState.mapCenter.lng : initialLng;
+    const targetZoom = 16;
+
+    if (targetMapName === 'map' && window.map) {
+        window.map.setView([targetLat, targetLng], targetZoom, { animate: true });
+    } else if (targetMapName === 'geoMap' && geoMapObj) {
+        geoMapObj.setView([targetLat, targetLng], targetZoom, { animate: true });
+    } else if (targetMapName === 'elevMap' && elevMapObj) {
+        elevMapObj.flyTo({ center: [targetLng, targetLat], zoom: targetZoom, pitch: 60, bearing: 0 });
+    }
+}
+
+// ==========================================
+// 💡 [신규] 기호 인벤토리 (목록에서 기호 선택) 기능
+// ==========================================
+window.openMarkerInventory = function(type) {
+    const modal = document.getElementById('markerInventoryModal');
+    const listContainer = document.getElementById('inventoryList');
+    listContainer.innerHTML = '';
+    
+    if (!window.gameState.mapMarkers || window.gameState.mapMarkers.length === 0) {
+        listContainer.innerHTML = '<div style="color:var(--text-muted); text-align:center; padding:20px; font-size:14px; background:#f8fafc; border-radius:8px;">등록된 기호가 없습니다.<br>지도에 먼저 기호를 등록해주세요.</div>';
+    } else {
+        // 기존 검색 결과용 스타일(search-result-item)을 활용하여 예쁘게 렌더링
+        window.gameState.mapMarkers.forEach(m => {
+            const item = document.createElement('div');
+            item.className = 'search-result-item'; 
+            item.style.display = 'flex';
+            item.style.alignItems = 'center';
+            item.style.gap = '15px';
+            item.innerHTML = `
+                <img src="${m.imgData}" style="width:36px; height:36px; object-fit:contain; border:1px solid var(--border-color); border-radius:8px; background:white;">
+                <div>
+                    <div style="font-weight:bold; color:var(--text-main); font-size:14px; margin-bottom:3px;">${m.placeName}</div>
+                    <div style="font-size:12px; color:var(--text-muted);">${m.legendDesc}</div>
+                </div>
+            `;
+            item.onclick = function() {
+                window.selectMarkerFromInventory(m, type);
+                modal.classList.remove('active'); // 선택하면 창이 자동으로 닫힘
+            };
+            listContainer.appendChild(item);
+        });
+    }
+    modal.classList.add('active');
+}
+
+// 인벤토리에서 선택한 기호를 강제로 클릭(이벤트 발생) 처리하는 함수
+window.selectMarkerFromInventory = function(m, type) {
+    if (type === 'geo') {
+        const marker = geoLeafletMarkers[m.id];
+        if (marker) {
+            geoMapObj.setView(m.latlng, 16, { animate: true }); // 지도를 해당 마커로 스르륵 이동
+            marker.fire('click'); // Leaflet 마커 클릭 이벤트 강제 발생
+        }
+    } else if (type === 'elev') {
+        const marker = elevMarkersList[m.id];
+        if (marker) {
+            elevMapObj.flyTo({ center: [m.latlng.lng, m.latlng.lat], zoom: 16, pitch: 60, bearing: 0 }); // 지형도를 해당 마커로 스르륵 이동
+            marker.getElement().click(); // MapLibre DOM 요소 클릭 강제 발생
+        }
+    }
+}
+
+// ==========================================
 // 💡 사이드바 토글 및 지도 탭 라우팅
 // ==========================================
 window.toggleMapMenu = function(element) {
@@ -190,11 +259,10 @@ window.initGeoMap = function() {
         return;
     }
     
-    // 💡 2번 탭 지도 역시 DB에서 설정된 우리 반 좌표를 최우선으로 적용합니다.
     const startLat = window.gameState.mapCenter ? window.gameState.mapCenter.lat : initialLat;
     const startLng = window.gameState.mapCenter ? window.gameState.mapCenter.lng : initialLng;
 
-    geoMapObj = L.map('geoMap', { zoomControl: false }).setView([startLat, startLng], 13);
+    geoMapObj = L.map('geoMap', { zoomControl: false }).setView([startLat, startLng], 16);
     L.control.zoom({ position: 'bottomright' }).addTo(geoMapObj);
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '&copy; OpenStreetMap contributors' }).addTo(geoMapObj);
     geoLayerGroup = L.layerGroup().addTo(geoMapObj);
@@ -218,7 +286,7 @@ function refreshGeoMarkers() {
             if(!window.geoSelection.a) {
                 window.geoSelection.a = m;
                 L.DomUtil.addClass(marker._icon, 'marker-glow-a');
-                window.showNotification("출발지가 선택되었습니다. 지도에서 다른 기호를 눌러 도착지를 지정하세요.");
+                window.showNotification("출발지가 선택되었습니다. 도착지를 지정하세요.");
             } else if(!window.geoSelection.b && window.geoSelection.a.id !== m.id) {
                 window.geoSelection.b = m;
                 L.DomUtil.addClass(marker._icon, 'marker-glow-b');
@@ -244,14 +312,14 @@ function drawGeoPolyline() {
     geoMapObj.fitBounds(geoPolyline.getBounds(), {
         paddingTopLeft: [380, 50], 
         paddingBottomRight: [50, 50],
-        maxZoom: 15
+        maxZoom: 17
     });
 }
 
 function updateGeoSelectionUI() {
-    document.getElementById('geoPointA').innerText = window.geoSelection.a ? window.geoSelection.a.placeName : "지도에서 기호를 클릭하세요";
+    document.getElementById('geoPointA').innerText = window.geoSelection.a ? window.geoSelection.a.placeName : "지도에서 클릭하세요";
     document.getElementById('geoPointA').style.color = window.geoSelection.a ? "var(--primary)" : "var(--text-muted)";
-    document.getElementById('geoPointB').innerText = window.geoSelection.b ? window.geoSelection.b.placeName : "지도에서 기호를 클릭하세요";
+    document.getElementById('geoPointB').innerText = window.geoSelection.b ? window.geoSelection.b.placeName : "지도에서 클릭하세요";
     document.getElementById('geoPointB').style.color = window.geoSelection.b ? "var(--accent)" : "var(--text-muted)";
 }
 
@@ -315,7 +383,6 @@ window.initElevMap = function() {
         return;
     }
 
-    // 💡 3D 지형 맵 역시 DB에서 설정된 우리 반 좌표를 최우선으로 적용합니다.
     const startLat = window.gameState.mapCenter ? window.gameState.mapCenter.lat : initialLat;
     const startLng = window.gameState.mapCenter ? window.gameState.mapCenter.lng : initialLng;
 
@@ -336,8 +403,8 @@ window.initElevMap = function() {
             layers: [{ id: 'osm', type: 'raster', source: 'osm' }],
             terrain: { source: 'terrainSource', exaggeration: 2.0 }
         },
-        center: [startLng, startLat], // MapLibre는 Lng, Lat 순서
-        zoom: 13,
+        center: [startLng, startLat], 
+        zoom: 16,
         pitch: 60,
         bearing: 0
     });
@@ -388,7 +455,7 @@ function handleElevMarkerClick(m, el) {
         window.elevSelection.b = m;
         el.classList.add('marker-glow-b');
         drawElevPolyline();
-        window.showNotification("도착지 선택 완료! 하단 [땅의 높낮이 단면도 보기] 버튼을 눌러보세요.");
+        window.showNotification("도착지 선택 완료! 하단 [땅의 높낮이 알아보기] 버튼을 눌러보세요.");
     } else {
         window.resetElevSelection();
         window.elevSelection.a = m;
@@ -423,15 +490,15 @@ function drawElevPolyline() {
     const bounds = new maplibregl.LngLatBounds(coords[0], coords[1]);
     elevMapObj.fitBounds(bounds, { 
         padding: {top: 100, bottom: 250, left: 400, right: 100}, 
-        maxZoom: 14, 
+        maxZoom: 16, 
         pitch: 60 
     });
 }
 
 function updateElevSelectionUI() {
-    document.getElementById('elevPointA').innerText = window.elevSelection.a ? window.elevSelection.a.placeName : "지도에서 기호를 클릭하세요";
+    document.getElementById('elevPointA').innerText = window.elevSelection.a ? window.elevSelection.a.placeName : "지도에서 클릭하세요";
     document.getElementById('elevPointA').style.color = window.elevSelection.a ? "var(--success)" : "var(--text-muted)";
-    document.getElementById('elevPointB').innerText = window.elevSelection.b ? window.elevSelection.b.placeName : "지도에서 기호를 클릭하세요";
+    document.getElementById('elevPointB').innerText = window.elevSelection.b ? window.elevSelection.b.placeName : "지도에서 클릭하세요";
     document.getElementById('elevPointB').style.color = window.elevSelection.b ? "var(--accent)" : "var(--text-muted)";
 }
 
@@ -486,7 +553,8 @@ window.fetchAndDrawElevationProfile = async function() {
             data: {
                 labels: labels,
                 datasets: [{
-                    label: '해발 고도 (m)',
+                    // 💡 라벨 용어 순화됨 (해발 고도 -> 땅의 높이)
+                    label: '땅의 높이 (m)',
                     data: elevations,
                     borderColor: '#16a34a',
                     backgroundColor: 'rgba(22, 163, 74, 0.2)',
@@ -513,6 +581,6 @@ window.fetchAndDrawElevationProfile = async function() {
 
     } catch (error) {
         console.error("고도 분석 오류:", error);
-        alert("해발 고도 데이터를 불러오는 데 실패했습니다. 잠시 후 다시 시도해주세요.");
+        alert("데이터를 불러오는 데 실패했습니다. 잠시 후 다시 시도해주세요.");
     }
 }

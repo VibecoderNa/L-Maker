@@ -9,21 +9,23 @@ window.fsIncrement = increment;
 
 window.padletColors = ['var(--note-1)', 'var(--note-2)', 'var(--note-3)', 'var(--note-4)'];
 window.districtLevels = [{ threshold: 0, name: "🌱 첫걸음을 뗀 우리 마을" }, { threshold: 40, name: "🏡 온기가 생겨나는 이웃 동네" }, { threshold: 135, name: "✨ 활력이 넘치는 자급자족 도시" }, { threshold: 290, name: "🌈 모두를 포용하는 스마트 그린 도시" }, { threshold: 540, name: "🌍 지속 가능한 미래형 모범 지역" }];
+
 window.buildingsData = [
-    { id: 'b1', tag: '복지', name: '작은 도서관 & 돌봄 쉼터', icon: 'fa-book-open-reader', costBudget: 400, reqVisitor: 0, reqReputation: 0, rewardSat: 15, desc:'기초 생활 복지 시설.' },
-    { id: 'b2', tag: '의료', name: '마을 보건소 & 건강증진센터', icon: 'fa-house-medical', costBudget: 800, reqVisitor: 30, reqReputation: 5, rewardSat: 25, desc:'건강 안전망.' },
-    { id: 'b3', tag: '환경', name: '로컬푸드 직매장 & 공유 마당', icon: 'fa-basket-shopping', costBudget: 1200, reqVisitor: 80, reqReputation: 12, rewardSat: 40, desc:'친환경 소비 공간.' },
-    { id: 'b4', tag: '문화', name: '자연 생태 숲길 & 캠핑장', icon: 'fa-campground', costBudget: 1600, reqVisitor: 150, reqReputation: 20, rewardSat: 55, desc:'친환경 관광지.' },
-    { id: 'b5', tag: '디지털', name: '디지털 시민 교육관', icon: 'fa-laptop-code', costBudget: 2200, reqVisitor: 200, reqReputation: 30, rewardSat: 70, desc:'미래형 교육 센터.' },
-    { id: 'b6', tag: '문화', name: '역사·문화 아카이브 센터', icon: 'fa-landmark', costBudget: 2800, reqVisitor: 250, reqReputation: 40, rewardSat: 85, desc:'전통 가치 보존 공간.' },
-    { id: 'b7', tag: '교통', name: '스마트 친환경 환승 주차장', icon: 'fa-charging-station', costBudget: 3600, reqVisitor: 350, reqReputation: 55, rewardSat: 110, desc:'친환경 교통망.' },
-    { id: 'b8', tag: '미래', name: '자원순환 발전소', icon: 'fa-recycle', costBudget: 4800, reqVisitor: 450, reqReputation: 70, rewardSat: 140, desc:'지속 가능한 테크 인프라.' }
+    { id: 'b1', tag: '복지', name: '작은 도서관 & 돌봄 쉼터', icon: 'fa-book-open-reader', costBudget: 200, reqVisitor: 10, reqReputation: 2, rewardSat: 15, desc:'기초 생활 복지 시설.' },
+    { id: 'b2', tag: '의료', name: '마을 보건소 & 건강증진센터', icon: 'fa-house-medical', costBudget: 400, reqVisitor: 50, reqReputation: 10, rewardSat: 25, desc:'건강 안전망.' },
+    { id: 'b3', tag: '환경', name: '로컬푸드 직매장 & 공유 마당', icon: 'fa-basket-shopping', costBudget: 600, reqVisitor: 120, reqReputation: 20, rewardSat: 40, desc:'친환경 소비 공간.' },
+    { id: 'b4', tag: '문화', name: '자연 생태 숲길 & 캠핑장', icon: 'fa-campground', costBudget: 800, reqVisitor: 250, reqReputation: 35, rewardSat: 55, desc:'친환경 관광지.' },
+    { id: 'b5', tag: '디지털', name: '디지털 시민 교육관', icon: 'fa-laptop-code', costBudget: 1100, reqVisitor: 400, reqReputation: 50, rewardSat: 70, desc:'미래형 교육 센터.' },
+    { id: 'b6', tag: '문화', name: '역사·문화 아카이브 센터', icon: 'fa-landmark', costBudget: 1400, reqVisitor: 600, reqReputation: 70, rewardSat: 85, desc:'전통 가치 보존 공간.' },
+    { id: 'b7', tag: '교통', name: '스마트 친환경 환승 주차장', icon: 'fa-charging-station', costBudget: 1800, reqVisitor: 850, reqReputation: 95, rewardSat: 110, desc:'친환경 교통망.' },
+    { id: 'b8', tag: '미래', name: '자원순환 발전소', icon: 'fa-recycle', costBudget: 2400, reqVisitor: 1200, reqReputation: 120, rewardSat: 140, desc:'지속 가능한 테크 인프라.' }
 ];
 
 window.isTeacherMode = false; window.dynamicApiKey = ""; window.dynamicApiModel = "gemini-3.8-flash"; window.classKey = ''; window.userKey = ''; window.currentUserId = ''; 
 window.gameState = { budget: 500, visitorCount: 0, reputation: 0, satisfaction: 0, submittedProposals: [], problems: [], promoBoard: [], marketingCampaigns: [], builtBuildings: [], mapMarkers: [], mapCenter: null };
 window.currentSelectedProblem = null; window.currentSelectedPromo = null;
 window.allStudentsData = {}; window.classDataLoaded = false; window.studentDataLoaded = false;
+window.initialMapCenterSet = false;
 
 window.getTodayStr = function() { const d = new Date(); const offset = d.getTimezoneOffset() * 60000; const kstTime = new Date(d.getTime() - offset + (9 * 60 * 60000)); return kstTime.toISOString().split('T')[0]; }
 window.safeGetItem = function(key) { try { return localStorage.getItem(key); } catch(e) { return null; } }
@@ -57,16 +59,27 @@ window.executeLogout = async function(e) {
     location.reload(); 
 }
 
+// 💡 수정됨: 학생들 글이 날아가지 않도록 강제 새로고침(location.reload) 삭제 및 텍스트 순화
 window.fetchWithRetry = async function(url, options, maxRetries = 3) {
     for (let i = 0; i < maxRetries; i++) {
         try {
             const response = await fetch(url, options);
             if (response.ok) return response;
             if (response.status === 429 || response.status >= 500) {
-                if (i === maxRetries - 1) throw new Error(`API 오류: ${response.status}`);
+                if (i === maxRetries - 1) {
+                    alert("시장님, 현재 안건 처리가 지연되고 있습니다. 잠시 후 다시 시도해주십시오.");
+                    throw new Error(`API 오류: ${response.status}`);
+                }
                 const delay = Math.pow(2, i) * 1000 + Math.random() * 500; await new Promise(resolve => setTimeout(resolve, delay)); continue;
-            } throw new Error(`API 오류: ${response.status}`);
-        } catch (error) { if (i === maxRetries - 1) throw error; const delay = Math.pow(2, i) * 1000 + Math.random() * 500; await new Promise(resolve => setTimeout(resolve, delay)); }
+            } 
+            throw new Error(`API 오류: ${response.status}`);
+        } catch (error) { 
+            if (i === maxRetries - 1) {
+                alert("시장님, 현재 안건 처리가 지연되고 있습니다. 잠시 후 다시 시도해주십시오.");
+                throw error;
+            } 
+            const delay = Math.pow(2, i) * 1000 + Math.random() * 500; await new Promise(resolve => setTimeout(resolve, delay)); 
+        }
     }
 }
 
@@ -112,6 +125,7 @@ window.initSystem = async function(isTeacherModeParam = false) {
     const fullCode = getEnteredClassCode();
     const n = document.getElementById('numInput').value;
     window.classDataLoaded = false; window.studentDataLoaded = false;
+    window.initialMapCenterSet = false; 
 
     if(!window.isTeacherMode) {
         if(!fullCode) { document.getElementById('loadingScreen').style.display = 'none'; alert("지역과 학급코드 숫자 4자리를 모두 입력해주세요."); return location.reload(); }
@@ -145,7 +159,6 @@ window.initSystem = async function(isTeacherModeParam = false) {
         document.getElementById('teacherApiKey').value = window.dynamicApiKey;
         document.getElementById('teacherApiModel').value = window.dynamicApiModel || "gemini-3.8-flash";
         
-        // 💡 수정됨: 학급 미개설 시 불필요한 카드 숨김 처리 로직 강화
         if(window.classKey === 'teacher_temp_global') { 
             document.getElementById('monitorWarning').style.display = 'block'; 
             document.getElementById('monitorGridView').style.display = 'none'; 
@@ -202,9 +215,9 @@ window.initSystem = async function(isTeacherModeParam = false) {
                 try { window.renderSharedMarketingBoard(); } catch(e) { console.error(e); }
                 try { window.restoreMapMarkers(); } catch(e) { console.error(e); }
 
-                // 지도가 로드되어 있다면 중심점 이동
-                if(window.map && window.gameState.mapCenter) {
-                    window.map.panTo([window.gameState.mapCenter.lat, window.gameState.mapCenter.lng]);
+                if(window.map && window.gameState.mapCenter && !window.initialMapCenterSet) {
+                    window.map.setView([window.gameState.mapCenter.lat, window.gameState.mapCenter.lng], 16);
+                    window.initialMapCenterSet = true; 
                 }
 
                 if(window.isTeacherMode && document.getElementById('monitorDetailView').style.display === 'block') { const currentlyViewingNum = document.getElementById('dtNum').innerText; if(currentlyViewingNum) window.showStudentDetails(currentlyViewingNum); }
