@@ -58,7 +58,19 @@ button.accent-btn { background: var(--accent); color: #ffffff; }
 .delete-btn { position: absolute; top: 10px; right: 10px; background: rgba(239, 68, 68, 0.8); color: white; border: none; border-radius: 6px; padding: 6px 10px; font-size: 12px; cursor: pointer; transition: 0.2s; z-index: 10; }
 .delete-btn:hover { background: rgba(239, 68, 68, 1); transform: scale(1.05); }
 
-/* 게시판 및 모니터링 스타일 유지 */
+/* 💡 신규: 좌우 2단 분리 레이아웃 (마케팅 기획용) */
+.split-layout { display: flex; gap: 25px; margin-bottom: 20px; align-items: stretch; }
+.split-left { flex: 1.3; display: flex; flex-direction: column; gap: 15px; }
+.split-right { flex: 1; display: flex; flex-direction: column; gap: 15px; background: #f8fafc; padding: 20px; border-radius: 12px; border: 1px solid var(--border-color); }
+.media-radio-card { background: #ffffff; border: 1px solid var(--border-color); padding: 15px; border-radius: 8px; cursor: pointer; display: flex; align-items: center; gap: 15px; transition: 0.2s; }
+.media-radio-card:hover { border-color: var(--primary); box-shadow: 0 4px 6px rgba(2,132,199,0.1); }
+.media-radio-card input[type="radio"] { margin: 0; width: 18px; height: 18px; accent-color: var(--accent); }
+.media-radio-card .media-icon { font-size: 24px; color: var(--primary); width: 30px; text-align: center; }
+.media-radio-card .media-info { flex: 1; }
+.media-radio-card .media-info strong { display: block; font-size: 15px; margin-bottom: 3px; color: var(--text-main); }
+.media-radio-card .media-info span { color: var(--text-muted); font-size: 13px; }
+@media (max-width: 900px) { .split-layout { flex-direction: column; } }
+
 .padlet-board { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 20px; }
 .board-item-selectable { padding: 20px; border-radius: 12px; cursor: pointer; transition: 0.2s; color: #1e293b; box-shadow: 0 4px 6px rgba(0,0,0,0.1); display: flex; flex-direction: column; gap: 10px; position: relative; }
 .board-item-selectable:hover { transform: translateY(-5px); box-shadow: 0 10px 15px rgba(0,0,0,0.2); }
@@ -83,7 +95,6 @@ button.accent-btn { background: var(--accent); color: #ffffff; }
 .st-detail-section { background: #f8fafc; border: 1px solid var(--border-color); border-radius: 12px; padding: 20px; margin-bottom: 20px; }
 .st-detail-section h4 { color: var(--primary); margin-top: 0; margin-bottom: 15px; border-bottom: 1px dashed var(--border-color); padding-bottom: 10px; }
 
-/* 교사 대시보드 슬라이드(Carousel) 스타일 */
 .carousel-wrapper { position: relative; width: 100%; border: 1px solid var(--border-color); border-radius: 12px; background: #ffffff; padding: 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.02); }
 .carousel-content { min-height: 200px; display: flex; align-items: center; justify-content: center; }
 .carousel-slide { display: none; width: 100%; }
@@ -93,14 +104,12 @@ button.accent-btn { background: var(--accent); color: #ffffff; }
 .slide-btn:hover { background: var(--primary); color: white; border-color: var(--primary); }
 .slide-counter { font-size: 14px; font-weight: bold; color: var(--text-muted); }
 
-/* 💡 신규 추가됨: 학교 위치 검색 결과 UI 스타일 */
 .search-result-item { padding: 12px 15px; border-bottom: 1px solid var(--border-color); cursor: pointer; transition: 0.2s; text-align: left; }
 .search-result-item:hover { background: #f1f5f9; }
 .search-result-item:last-child { border-bottom: none; }
 .search-result-name { font-weight: 700; color: var(--text-main); font-size: 15px; margin-bottom: 4px; display: flex; align-items: center; gap: 8px; }
 .search-result-address { font-size: 13px; color: var(--text-muted); padding-left: 20px; line-height: 1.4; word-break: keep-all; }
 
-/* 건물 건설, 지도 등 기본 스타일 유지 */
 .level-header { display: flex; flex-direction: column; justify-content: center; align-items: center; min-height: 180px; overflow: hidden; text-align: center; padding: 30px; background: linear-gradient(145deg, #ffffff, #f1f5f9); border-radius: 16px; border: 1px solid var(--border-color); margin-bottom: 30px; box-shadow: 0 4px 10px rgba(0,0,0,0.05); }
 .level-title { font-size: 32px; font-weight: 800; color: var(--accent); margin-bottom: 15px; text-shadow: 1px 1px 2px rgba(234, 88, 12, 0.2); }
 .progress-container { width: 100%; max-width: 600px; height: 20px; background: #e2e8f0; border-radius: 10px; margin: 0 auto; overflow: hidden; border: 1px solid var(--border-color); position: relative; }
@@ -123,7 +132,6 @@ button.accent-btn { background: var(--accent); color: #ffffff; }
 .req-item.lacking { color: #ef4444; }
 .b-reward { color: var(--accent); font-weight: bold; font-size: 14px; margin-bottom: 15px; text-align: center; }
 
-/* 지도 및 범례 스타일 */
 #notification { position: fixed; bottom: 20px; right: 20px; background: var(--accent); color: #ffffff; padding: 15px 25px; border-radius: 8px; font-weight: bold; transform: translateY(100px); opacity: 0; transition: 0.3s; z-index: 9999; box-shadow: 0 4px 15px rgba(0,0,0,0.15); }
 #notification.show { transform: translateY(0); opacity: 1; }
 #mapWrapper { position: relative; width: 100%; height: calc(100vh - 160px); border-radius: 16px; overflow: hidden; border: 1px solid var(--border-color); background: #e2e8f0; }

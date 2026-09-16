@@ -1,14 +1,26 @@
 // ui.js - 화면 그리기, 탭 전환, 시각적 요소(UI) 전담
 
+window.currentEditingProposalId = null;
+window.currentEditingCampaignId = null;
+
+// 💡 수정됨: 해시태그 관련 UI를 예시 카드에서 깔끔하게 삭제했습니다.
 window.renderProblemBoard = function() {
     const board = document.getElementById('problemBoard'); if(!board) return;
-    board.innerHTML = `<div class="board-item-selectable" style="background: var(--note-1);" onclick="window.selectProblem(this, '초등학교 앞 횡단보도 고장')"><div class="author-tag">👤 예시 자료</div><strong style="font-size: 18px; margin-bottom: 5px;">초등학교 앞 횡단보도 고장</strong><div style="font-size: 14px; margin-top: 5px;">신호등이 고장나서 위험합니다.</div><div style="margin-top: auto; padding-top: 10px;"><span class="tag">#교통안전</span><span class="tag">#사고위험</span></div></div>`;
+    
+    let vipGuide = window.userKey === "0" ? `<div style="background:var(--accent); color:white; padding:8px; border-radius:8px; font-size:12px; font-weight:bold; text-align:center; margin-bottom:10px; animation: popIn 0.5s ease-out;">👉 심사위원님, 이 주제를 클릭해 주세요!</div>` : '';
+
+    board.innerHTML = `<div class="board-item-selectable" style="background: var(--note-1);" onclick="window.selectProblem(this, '초등학교 앞 횡단보도 고장 방치')">${vipGuide}<div class="author-tag">👤 예시 자료</div><strong style="font-size: 18px; margin-bottom: 5px;">초등학교 앞 횡단보도 고장 방치</strong><div style="font-size: 14px; margin-top: 5px;">신호등이 고장나서 위험합니다.</div></div>`;
     if(window.gameState.problems) {
         window.gameState.problems.forEach((p, index) => {
-            const tagHtml = (p.keywords || []).map(kw => `<span class="tag">${kw}</span>`).join('');
+            let tagsContainer = '';
+            if (p.keywords && p.keywords.length > 0) {
+                const tagHtml = p.keywords.map(kw => `<span class="tag">${kw}</span>`).join('');
+                tagsContainer = `<div style="margin-top: auto; padding-top: 10px;">${tagHtml}</div>`;
+            }
+            
             let imageHtml = p.imageUrl ? `<img src="${p.imageUrl}" class="board-image">` : '';
             let deleteBtnHtml = window.isTeacherMode ? `<button class="delete-btn" onclick="event.stopPropagation(); window.deleteItem('problem', ${index})"><i class="fa-solid fa-trash"></i></button>` : '';
-            board.innerHTML += `<div class="board-item-selectable" style="background: ${p.color}; position:relative;" onclick="window.selectProblem(this, '${p.title}')">${deleteBtnHtml}<div class="author-tag">👤 ${p.author}</div><strong style="font-size: 18px; margin-bottom: 5px;">${p.title}</strong>${imageHtml}<div style="font-size: 14px; margin-top: 5px; line-height: 1.4;">${p.content}</div><div style="margin-top: auto; padding-top: 10px;">${tagHtml}</div></div>`;
+            board.innerHTML += `<div class="board-item-selectable" style="background: ${p.color}; position:relative;" onclick="window.selectProblem(this, '${p.title}')">${deleteBtnHtml}<div class="author-tag">👤 ${p.author}</div><strong style="font-size: 18px; margin-bottom: 5px;">${p.title}</strong>${imageHtml}<div style="font-size: 14px; margin-top: 5px; line-height: 1.4;">${p.content}</div>${tagsContainer}</div>`;
         });
     }
 }
@@ -17,8 +29,17 @@ window.selectProblem = function(element, desc) {
     document.querySelectorAll('#problemBoard .board-item-selectable').forEach(el => el.classList.remove('selected'));
     element.classList.add('selected'); window.currentSelectedProblem = desc;
     const displayEl = document.getElementById('selectedProblemDisplay'); displayEl.style.display = 'block'; displayEl.innerHTML = `💡 해결할 주제: <span style="color:var(--primary);">${desc}</span>`;
-    document.getElementById('proposalText').value = "[1. 문제 원인 분석]\n이 문제는 왜 발생했을까요?\n👉 \n\n[2. 구체적인 해결 방안]\n어떻게 해결할 수 있을지 아이디어를 적어주세요. (실현 가능성 고려)\n👉 \n\n[3. 기대 효과]\n문제가 해결되면 우리 지역 사람들에게 어떤 도움이 될까요? (공공성 고려)\n👉 \n";
-    window.showNotification("주제가 선택되었습니다. 제안서를 작성해주세요."); window.switchInnerTab('inner-proposal', document.querySelectorAll('#stage1-1 .sub-tab-btn')[2]);
+    
+    window.currentEditingProposalId = null; 
+    
+    if(window.userKey === "0") {
+        document.getElementById('proposalText').value = "[1. 문제 원인 분석]\n신고 방법 잘 모름: 고장이 나도 어른들이 바빠서 바로 신고하지 않거나, 어디에 연락해야 하는지 모릅니다.\n점검 시간과 예산 부족: 관공서에서 매일 모든 신호등을 점검하기 어렵고, 수리하는 데 시간이 걸립니다.\n\n[2. 구체적인 해결 방안]\n어린이 안전 감시단: 등하굣길에 고장 난 신호등을 발견하면 선생님이나 배움터지킴이 어르신께 즉시 알립니다.\nQR코드 간편 신고판: 신호등 기둥의 QR코드를 찍으면 10초 만에 구청에 신고되는 시스템을 만듭니다.\n스마트 안내판: 수리 전까지는 움직임을 감지하는 노란색 안내판을 세워 운전자에게 주의를 줍니다.\n\n[3. 기대 효과]\n빠른 수리와 안전: 신고와 수리가 빨라져 교통사고를 미리 막을 수 있습니다.\n우리 동네 관심 증가: 학생과 주민들이 동네 안전에 더 많은 관심을 갖게 됩니다.";
+    } else {
+        document.getElementById('proposalText').value = "[1. 문제 원인 분석]\n이 문제는 왜 발생했을까요?\n👉 \n\n[2. 구체적인 해결 방안]\n어떻게 해결할 수 있을지 아이디어를 적어주세요.\n👉 \n\n[3. 기대 효과]\n문제가 해결되면 우리 지역 사람들에게 어떤 도움이 될까요?\n👉 \n";
+    }
+    
+    window.showNotification("주제가 선택되었습니다. 제안서를 작성해주세요."); 
+    window.switchInnerTab('inner-proposal', document.querySelectorAll('#stage1-1 .sub-tab-btn')[2]);
 }
 
 window.renderSharedProposals = function() {
@@ -40,7 +61,7 @@ window.renderSharedProposals = function() {
         let feedbackHtml = `<div style="font-size:13px; background:rgba(2, 132, 199, 0.05); padding:10px; border-radius:8px; border:1px solid rgba(2, 132, 199, 0.2); margin-top:10px;"><strong>🤖 AI 1차 의견:</strong> ${p.aiFeedback || ""} <span style="color:var(--primary); font-weight:bold;">(기본 획득: ${p.aiBudget || 0}G)</span></div>`;
         
         if(p.status !== 'waiting' && p.teacherFeedback) {
-            feedbackHtml += `<div style="font-size:13px; margin-top:10px; background:rgba(22, 163, 74, 0.1); padding:10px; border-radius:6px; border:1px solid rgba(22, 163, 74, 0.3);"><strong>👨‍🏫 선생님 피드백:</strong> ${p.teacherFeedback} <br><span style="color:var(--accent); font-weight:bold;">(+ 추가 예산: ${p.teacherBudget || 0}G)</span></div>`;
+            feedbackHtml += `<div style="font-size:13px; margin-top:10px; background:rgba(22, 163, 74, 0.1); padding:10px; border-radius:6px; border:1px solid rgba(22, 163, 74, 0.3);"><strong>👨‍🏫 선생님 코멘트:</strong> ${p.teacherFeedback} <br><span style="color:var(--accent); font-weight:bold;">(+ 추가 예산: ${p.teacherBudget || 0}G)</span></div>`;
         }
 
         let safeProposal = p.proposal || "";
@@ -59,6 +80,58 @@ window.renderSharedProposals = function() {
     });
 }
 
+window.renderMyProposals = function() {
+    const list = document.getElementById('myProposalsList');
+    if(!list) return;
+    
+    const myProps = window.gameState.submittedProposals.filter(p => String(p.authorId) === String(window.userKey));
+    if(myProps.length === 0) {
+        list.innerHTML = '<div style="color:var(--text-muted); text-align:center; padding:30px; background:#f8fafc; border-radius:8px; border:1px dashed var(--border-color);">아직 내가 제출한 제안서가 없습니다.</div>';
+        return;
+    }
+    
+    let html = '';
+    myProps.forEach(p => {
+        let statusHtml = '';
+        let btnHtml = '';
+        
+        if(p.status === 'waiting') {
+            statusHtml = '<span style="color:#d97706; font-weight:bold; background:#fef08a; padding:4px 8px; border-radius:4px; font-size:12px;">⏳ 심사 대기중</span>';
+        } else if(p.status === 'approved') {
+            statusHtml = '<span style="color:#166534; font-weight:bold; background:#bbf7d0; padding:4px 8px; border-radius:4px; font-size:12px;">✅ 승인 완료</span>';
+        } else if(p.status === 'rejected') {
+            statusHtml = '<span style="color:#991b1b; font-weight:bold; background:#fecaca; padding:4px 8px; border-radius:4px; font-size:12px;">❌ 재검토 요망</span>';
+            btnHtml = `<button class="action-btn accent-btn" style="margin-top:15px; padding:10px 15px; font-size:14px;" onclick="window.editMyProposal(${p.id})"><i class="fa-solid fa-pen"></i> 다시 작성하기</button>`;
+        }
+        
+        html += `<div style="background:#ffffff; border:1px solid var(--border-color); padding:20px; border-radius:12px; box-shadow:0 2px 4px rgba(0,0,0,0.02);">
+            <div style="display:flex; justify-content:space-between; margin-bottom:15px; align-items:center;">
+                <strong style="color:var(--primary); font-size:16px;">주제: ${p.problem}</strong>
+                <div>${statusHtml}</div>
+            </div>
+            <div style="font-size:14px; color:var(--text-main); margin-bottom:15px; line-height:1.6; background:#f8fafc; padding:15px; border-radius:8px; border:1px solid #e2e8f0;">${(p.proposal||'').replace(/\n/g, '<br>')}</div>
+            ${p.teacherFeedback ? `<div style="font-size:14px; background:#fef2f2; padding:12px; border-radius:8px; color:#991b1b; border:1px solid #fca5a5;"><strong>👨‍🏫 선생님 코멘트:</strong> ${p.teacherFeedback}</div>` : ''}
+            ${btnHtml}
+        </div>`;
+    });
+    list.innerHTML = html;
+}
+
+window.editMyProposal = function(id) {
+    const p = window.gameState.submittedProposals.find(x => x.id === id);
+    if(!p) return;
+    
+    window.currentEditingProposalId = id; 
+    window.currentSelectedProblem = p.problem;
+    
+    document.getElementById('selectedProblemDisplay').style.display = 'block';
+    document.getElementById('selectedProblemDisplay').innerHTML = `💡 해결할 주제: <span style="color:var(--primary);">${p.problem}</span>`;
+    document.getElementById('proposalText').value = p.proposal; 
+    
+    window.switchInnerTab('inner-proposal', document.querySelectorAll('#stage1-1 .sub-tab-btn')[2]);
+    window.showNotification("기존 내용을 불러왔습니다. 수정하여 다시 제출해주세요.");
+}
+
 document.addEventListener('change', function(e) {
     if(e.target.name === 'mediaOption') { 
         document.querySelectorAll('input[name="mediaOption"]').forEach(r => { 
@@ -75,45 +148,113 @@ document.addEventListener('change', function(e) {
 window.goToPromoStep2 = function() {
     const topic = document.getElementById('promoTopic').value.trim();
     const target = document.getElementById('promoTarget').value.trim();
-    const slogan = document.getElementById('promoSlogan').value.trim();
+    let slogan = document.getElementById('promoSlogan').value.trim().replace(/^["']+|["']+$/g, '');
     
+    // 💡 수정됨: 딱딱한 alert를 부드러운 showNotification으로 교체[cite: 3]
     if(!topic || !target || !slogan) {
-        return alert("홍보 대상, 타겟 설정, 핵심 슬로건을 모두 작성해주세요.");
+        return window.showNotification("홍보 대상, 타겟 설정, 핵심 슬로건을 모두 작성해주세요.");
     }
     
     document.getElementById('displayStrategyTopic').innerText = topic;
     document.getElementById('displayStrategyTarget').innerText = target;
     document.getElementById('displayStrategySlogan').innerText = `"${slogan}"`;
     
+    window.currentEditingCampaignId = null;
+    
+    if(window.userKey === "0") {
+        document.getElementById('promoContentInput').value = "[기획 제목] 초등학생 추천! 우리 동네 스탬프 투어 팸플릿\n[기획 의도]\n다른 지역 친구들과 가족들이 주말에 찾아오기 쉽게, 어린이 시선에서 재미있는 코스를 정리한 팸플릿을 만듭니다.\n[홍보 문구 및 내용]\n1. 핵심 문구: \"이번 주말 어디 가지? 초등학생이 찾아낸 우리 동네 보물지도로 출발!\"\n2. 추천 코스:\n - 1코스: 자연 속 생태 체험장\n - 2코스: 맛있는 특산물 맛집과 시장\n - 3코스: 재미있는 박물관과 공예 체험\n3. 특별 이벤트: 3개 코스 도장을 다 찍어오면 우리 동네 귀여운 캐릭터 인형을 선물로 드립니다!\n[기대 효과]\n인근 학교와 도서관에 배포하여 주말에 놀러 오는 가족 손님을 늘리고 우리 동네를 널리 알립니다.";
+        document.querySelectorAll('input[name="mediaOption"]')[0].checked = true;
+    } else {
+        document.getElementById('promoContentInput').value = '';
+    }
+    
     window.showNotification("전략 수립 완료! 멋진 포스터와 기획안을 작성해보세요.");
     window.switchInnerTab('inner-promo-campaign', document.querySelectorAll('#stage2-1 .sub-tab-btn')[1]);
 }
 
-// 💡 수정됨: 제출 시 숫자 숨김 및 협의 중 텍스트 노출
+window.renderMyCampaigns = function() {
+    const list = document.getElementById('myCampaignsList');
+    if(!list) return;
+    
+    const myCamps = window.gameState.marketingCampaigns.filter(c => String(c.authorKey) === String(window.userKey));
+    if(myCamps.length === 0) {
+        list.innerHTML = '<div style="color:var(--text-muted); text-align:center; padding:30px; background:#f8fafc; border-radius:8px; border:1px dashed var(--border-color);">아직 제출한 홍보 방법이 없습니다.</div>';
+        return;
+    }
+    
+    let html = '';
+    myCamps.forEach(c => {
+        let statusHtml = '';
+        let btnHtml = '';
+        
+        if(c.status === 'waiting') {
+            statusHtml = '<span style="color:#d97706; font-weight:bold; background:#fef08a; padding:4px 8px; border-radius:4px; font-size:12px;">⏳ 심사 대기중</span>';
+        } else if(c.status === 'approved') {
+            statusHtml = '<span style="color:#166534; font-weight:bold; background:#bbf7d0; padding:4px 8px; border-radius:4px; font-size:12px;">✅ 홍보 성공!</span>';
+        } else if(c.status === 'rejected') {
+            statusHtml = '<span style="color:#991b1b; font-weight:bold; background:#fecaca; padding:4px 8px; border-radius:4px; font-size:12px;">❌ 재검토 요망</span>';
+            btnHtml = `<button class="action-btn accent-btn" style="margin-top:15px; padding:10px 15px; font-size:14px;" onclick="window.editMyCampaign(${c.id})"><i class="fa-solid fa-pen"></i> 다시 작성하기</button>`;
+        }
+        
+        let cleanSlogan = (c.slogan || "").replace(/^["']+|["']+$/g, '');
+
+        html += `<div style="background:#ffffff; border:1px solid var(--border-color); padding:20px; border-radius:12px; box-shadow:0 2px 4px rgba(0,0,0,0.02);">
+            <div style="display:flex; justify-content:space-between; margin-bottom:15px; align-items:center;">
+                <strong style="color:var(--primary); font-size:16px;">매체: ${c.media} (${c.cost}G)</strong>
+                <div>${statusHtml}</div>
+            </div>
+            <div style="font-weight:bold; margin-bottom:5px;">"${cleanSlogan}"</div>
+            <div style="font-size:14px; color:var(--text-main); margin-bottom:15px; line-height:1.6; background:#f8fafc; padding:15px; border-radius:8px; border:1px solid #e2e8f0;">${(c.content||'').replace(/\n/g, '<br>')}</div>
+            ${c.teacherFeedback ? `<div style="font-size:14px; background:#fef2f2; padding:12px; border-radius:8px; color:#991b1b; border:1px solid #fca5a5;"><strong>👨‍🏫 선생님 코멘트:</strong> ${c.teacherFeedback}</div>` : ''}
+            ${btnHtml}
+        </div>`;
+    });
+    list.innerHTML = html;
+}
+
+window.editMyCampaign = function(id) {
+    const c = window.gameState.marketingCampaigns.find(x => x.id === id);
+    if(!c) return;
+    
+    window.currentEditingCampaignId = id; 
+    let cleanSlogan = (c.slogan || "").replace(/^["']+|["']+$/g, '');
+    
+    document.getElementById('displayStrategyTopic').innerText = c.topic;
+    document.getElementById('displayStrategyTarget').innerText = c.target;
+    document.getElementById('displayStrategySlogan').innerText = `"${cleanSlogan}"`;
+    document.getElementById('promoContentInput').value = c.content; 
+    
+    window.switchInnerTab('inner-promo-campaign', document.querySelectorAll('#stage2-1 .sub-tab-btn')[1]);
+    window.showNotification("기존 내용을 불러왔습니다. 예산과 내용을 보완하여 다시 제출해주세요.");
+}
+
 window.executeCampaign = async function() {
     const topic = document.getElementById('displayStrategyTopic').innerText;
     const target = document.getElementById('displayStrategyTarget').innerText;
-    const slogan = document.getElementById('displayStrategySlogan').innerText;
+    const slogan = document.getElementById('displayStrategySlogan').innerText.replace(/^["']+|["']+$/g, '');
     const content = document.getElementById('promoContentInput').value.trim();
     
-    if(!content) return alert("기획안 및 홍보 문구를 작성해주세요.");
+    // 💡 수정됨: alert 교체[cite: 3]
+    if(!content) return window.showNotification("상세 기획안 및 홍보 문구를 작성해주세요.");
 
     let mediaName = "";
     let cost = 0;
     const radio = document.querySelector('input[name="mediaOption"]:checked');
-    if(!radio) return alert("광고 매체를 선택해주세요.");
+    if(!radio) return window.showNotification("광고 매체를 선택해주세요.");
 
     if(radio.value === 'custom') {
         mediaName = document.getElementById('customMediaName').value.trim();
         cost = parseInt(document.getElementById('customMediaBudget').value);
-        if(!mediaName || isNaN(cost) || cost <= 0) return alert("자율 매체명과 올바른 필요 예산을 입력해주세요.");
+        // 💡 수정됨: alert 교체[cite: 3]
+        if(!mediaName || isNaN(cost) || cost <= 0) return window.showNotification("자율 매체명과 필요 예산을 올바르게 입력해주세요.");
     } else {
         mediaName = radio.getAttribute('data-name');
         cost = parseInt(radio.value);
     }
 
     if(window.gameState.budget < cost) {
-        return alert(`예산이 부족합니다! (현재 보유 예산: ${window.gameState.budget}G / 필요 예산: ${cost}G)\n지도의 기호를 추가로 등록하거나 친구의 게시물에 좋아요를 받아보세요.`);
+        // 💡 수정됨: alert 교체[cite: 3]
+        return window.showNotification(`예산 부족! (현재 보유: ${window.gameState.budget}G / 필요 예산: ${cost}G)\n기호를 등록하거나 친구에게 좋아요를 받으세요.`);
     }
 
     let imageUrl = null;
@@ -127,42 +268,60 @@ window.executeCampaign = async function() {
 
     window.gameState.budget -= cost;
 
-    // 성과는 DB에만 저장
     const expectedVis = Math.floor(cost * (Math.random() * 0.5 + 0.8));
     const expectedRep = Math.floor((cost / 20) * (Math.random() * 0.5 + 0.8));
 
-    const campaign = {
-        id: Date.now(),
-        author: `${document.getElementById('numInput').value}번 시장님`,
-        authorKey: window.userKey,
-        topic: topic,
-        target: target,
-        slogan: slogan,
-        imageUrl: imageUrl, 
-        media: mediaName,
-        cost: cost,
-        content: content,
-        expectedVisitor: expectedVis,
-        expectedReputation: expectedRep,
-        status: 'waiting',
-        likes: 0,
-        likedBy: []
-    };
+    if (window.currentEditingCampaignId) {
+        const index = window.gameState.marketingCampaigns.findIndex(x => x.id === window.currentEditingCampaignId);
+        if (index !== -1) {
+            const c = window.gameState.marketingCampaigns.splice(index, 1)[0];
+            c.topic = topic;
+            c.target = target;
+            c.slogan = slogan;
+            if(imageUrl) c.imageUrl = imageUrl;
+            c.media = mediaName;
+            c.cost = cost;
+            c.content = content;
+            c.expectedVisitor = expectedVis;
+            c.expectedReputation = expectedRep;
+            c.status = 'waiting';
+            c.teacherFeedback = ''; 
+            
+            window.gameState.marketingCampaigns.unshift(c);
+        }
+        window.currentEditingCampaignId = null; 
+    } else {
+        const campaign = {
+            id: Date.now(),
+            author: `${document.getElementById('numInput').value}번 시장님`,
+            authorKey: window.userKey,
+            topic: topic,
+            target: target,
+            slogan: slogan,
+            imageUrl: imageUrl, 
+            media: mediaName,
+            cost: cost,
+            content: content,
+            expectedVisitor: expectedVis,
+            expectedReputation: expectedRep,
+            status: 'waiting',
+            likes: 0,
+            likedBy: []
+        };
+        window.gameState.marketingCampaigns.unshift(campaign);
+    }
 
-    window.gameState.marketingCampaigns.unshift(campaign);
     window.updateUI();
     window.renderSharedMarketingBoard();
 
     document.getElementById('campaignResultArea').style.display = 'block';
-    
-    // 학생 화면에는 숫자(Metrics)를 비우고 피드백만 제공
     document.getElementById('campaignFeedback').innerHTML = `
         <div style="font-size:18px; margin-bottom:10px;"><strong>🤝 기획안 검토 중입니다!</strong></div>
         "${mediaName}" 매체를 활용한 전략이 성공적으로 제출되었습니다.<br>
         현재 👨‍🏫 <strong>선생님</strong>과 🤖 <strong>AI 홍보 담당관</strong>이 시장님의 전략을 검토하며 최종 성과를 의논하고 있습니다. 승인을 기다려주세요!
     `;
     
-    window.showNotification("캠페인이 성공적으로 제출되었습니다!");
+    window.showNotification("홍보 방법이 성공적으로 제출되었습니다!");
 }
 
 window.renderSharedMarketingBoard = function() {
@@ -186,11 +345,12 @@ window.renderSharedMarketingBoard = function() {
         let contentHtml = safeContent.replace(/\n/g, '<br>');
         let safeTopic = c.topic || "미지정";
         let safeTarget = c.target || "미지정";
-        let safeSlogan = c.slogan || "";
         let safeMedia = c.media || "미지정";
         
+        let cleanSlogan = (c.slogan || "").replace(/^["']+|["']+$/g, '');
+
         let metricsHtml = `<div style="background:rgba(2, 132, 199, 0.05); padding:10px; border-radius:8px; margin-top:10px; font-size:13px; text-align:center;">
-            <strong>🎉 확정 성과:</strong> 방문객 <span style="color:#d97706">+${c.expectedVisitor || 0}명</span> | 평판 <span style="color:#ef4444">+${c.expectedReputation || 0}점</span>
+            <strong>🎉 홍보 효과:</strong> 방문객 <span style="color:#d97706">+${c.expectedVisitor || 0}명</span> | 평판 <span style="color:#ef4444">+${c.expectedReputation || 0}점</span>
         </div>`;
 
         let deleteBtnHtml = window.isTeacherMode ? `<button class="delete-btn" onclick="event.stopPropagation(); window.deleteItem('campaign', ${c.id})"><i class="fa-solid fa-trash"></i></button>` : '';
@@ -200,7 +360,7 @@ window.renderSharedMarketingBoard = function() {
             ${deleteBtnHtml}
             <div style="display:flex; justify-content:space-between; align-items:center;">
                 <div class="author-tag" style="margin:0; font-size:14px;">👤 ${c.author || "익명"}</div>
-                <span style="background:#bbf7d0; color:#166534; padding:4px 8px; border-radius:4px; font-size:12px; font-weight:bold;">✅ 성과 확정됨</span>
+                <span style="background:#bbf7d0; color:#166534; padding:4px 8px; border-radius:4px; font-size:12px; font-weight:bold;">✅ 홍보 성공!</span>
             </div>
             
             ${imageHtml}
@@ -210,7 +370,7 @@ window.renderSharedMarketingBoard = function() {
                 <div><strong style="color:var(--primary);">👥 타겟 설정:</strong> ${safeTarget}</div>
             </div>
             
-            <div style="font-size: 16px; font-weight: bold; color: var(--text-main); margin-bottom: 5px; margin-top: 5px;">"${safeSlogan}"</div>
+            <div style="font-size: 16px; font-weight: bold; color: var(--text-main); margin-bottom: 5px; margin-top: 5px;">"${cleanSlogan}"</div>
             
             <div style="font-size:14px; line-height:1.6; background:#ffffff; padding:12px; border-radius:8px; border:1px solid #e2e8f0; color:#1e293b;">${contentHtml}</div>
             
@@ -353,8 +513,15 @@ window.toggleStage2Menu = function(element) {
     if(document.getElementById('stage1SubMenu')) document.getElementById('stage1SubMenu').classList.remove('active');
     if(document.getElementById('teacherNav')) document.getElementById('teacherNav').classList.remove('active'); 
     document.getElementById('stage3Nav').classList.remove('active');
-    if(menu.classList.contains('active')) window.switchTab('stage2-1', menu.querySelector('.sub-nav-item'), '1) 우리 지역을 어떻게 알릴지 계획해요', true);
+    if(menu.classList.contains('active')) window.switchTab('stage2-1', menu.querySelector('.sub-nav-item'), '1) 홍보 계획 세우기', true);
 }
 
-window.switchInnerTab = function(innerTabId, element) { const parentPanel = element.closest('.tab-panel'); parentPanel.querySelectorAll('.inner-tab-panel').forEach(t => t.classList.remove('active')); parentPanel.querySelectorAll('.sub-tab-btn').forEach(b => b.classList.remove('active')); document.getElementById(innerTabId).classList.add('active'); element.classList.add('active'); }
+window.switchInnerTab = function(innerTabId, element) { 
+    const parentPanel = element.closest('.tab-panel'); 
+    parentPanel.querySelectorAll('.inner-tab-panel').forEach(t => t.classList.remove('active')); 
+    parentPanel.querySelectorAll('.sub-tab-btn').forEach(b => b.classList.remove('active')); 
+    document.getElementById(innerTabId).classList.add('active'); 
+    element.classList.add('active'); 
+}
+
 window.showNotification = function(msg) { const noti = document.getElementById('notification'); noti.innerText = msg; noti.classList.add('show'); setTimeout(() => noti.classList.remove('show'), 3500); }

@@ -106,8 +106,8 @@
                 <i class="fa-solid fa-bullhorn"></i> 우리 지역을 홍보해요
             </div>
             <div id="stage2SubMenu" class="sub-nav-menu">
-                <div class="sub-nav-item" onclick="window.switchTab('stage2-1', this, '1) 우리 지역을 어떻게 알릴지 계획해요', true)">
-                    1) 우리 지역을 어떻게 알릴지 계획해요
+                <div class="sub-nav-item" onclick="window.switchTab('stage2-1', this, '1) 홍보 계획 세우기', true)">
+                    1) 홍보 계획 세우기
                 </div>
                 <div class="sub-nav-item" onclick="window.switchTab('stage2-2', this, '2) 우리 반의 홍보 마케팅 전략을 함께 살펴보아요', true)">
                     2) 우리 반의 홍보 마케팅 전략을 함께 살펴보아요
@@ -180,17 +180,31 @@
                     </div>
 
                     <div id="inner-teacher-setup" class="inner-tab-panel active">
-                        <div id="setupApiKeyCard" class="card" style="display: none;">
-                            <h3 style="margin-top:0;"><i class="fa-solid fa-key"></i> 안전한 API 키 및 AI 모델 설정</h3>
-                            <p style="color:var(--text-muted); font-size:13px;">선생님 PC에서 설정하면 파이어베이스 DB를 통해 학급 전체 학생들에게 안전하게 적용됩니다.</p>
-                            <div style="display:flex; gap:10px;">
-                                <input type="password" id="teacherApiKey" placeholder="Gemini API Key 입력" style="flex:2; margin-bottom:0;">
-                                <input type="text" id="teacherApiModel" placeholder="모델명 (예: gemini-1.5-flash)" value="gemini-1.5-flash" style="flex:1; margin-bottom:0;" title="구글 AI 모델명 입력">
-                                <button class="action-btn accent-btn" style="width:auto; margin-top:0;" onclick="window.saveApiKey()">설정 저장</button>
-                            </div>
-                            <p style="color:var(--text-muted); font-size:12px; margin-top:8px;">※ 구글 모델 버전이 업데이트될 경우 모델명에서 숫자(예: 1.5, 2.0 등)만 변경하여 사용할 수 있습니다.</p>
-                        </div>
+                        <!-- 💡 신규: 카드 순서 재배치 1. 학급코드 / 2. 학교지도 / 3. 다중API -->
                         
+                        <div id="setupClassCard" class="card">
+                            <h3 style="margin-top:0;"><i class="fa-solid fa-school"></i> 현재 관리 중인 학급</h3>
+                            <p style="color:var(--text-muted); font-size:13px;">선생님은 현재 아래 학급의 데이터를 실시간으로 모니터링하고 있습니다.</p>
+                            <div style="display:flex; gap:10px; margin-top:15px; margin-bottom:15px;">
+                                <select id="teacherRegionSelect" style="flex:1; margin-bottom:0;">
+                                    <option value="" disabled selected>👉 학교가 위치한 지역 선택</option>
+                                    <option value="seoul">서울특별시</option><option value="gyeonggi">경기도</option><option value="incheon">인천광역시</option>
+                                    <option value="gangwon">강원특별자치도</option><option value="chungnam">충청남도</option><option value="chungbuk">충청북도</option>
+                                    <option value="daejeon">대전광역시</option><option value="sejong">세종특별자치시</option><option value="gyeongbuk">경상북도</option>
+                                    <option value="gyeongnam">경상남도</option><option value="daegu">대구광역시</option><option value="busan">부산광역시</option>
+                                    <option value="ulsan">울산광역시</option><option value="jeonbuk">전북특별자치도</option><option value="jeonnam">전라남도</option>
+                                    <option value="gwangju">광주광역시</option><option value="jeju">제주특별자치도</option>
+                                </select>
+                                <button class="action-btn accent-btn" style="flex:1; margin-top:0;" onclick="window.generateClassCode()">학급 개설하기</button>
+                            </div>
+
+                            <div id="generatedCodeDisplay" style="display:none; margin-top:10px; background:rgba(22, 163, 74, 0.1); border:1px solid var(--success); padding:20px; border-radius:12px; text-align:center;">
+                                <div style="color:var(--text-main); font-size:15px; margin-bottom:10px;">학생 접속용 우리 반 학급코드</div>
+                                <div id="displayFinalCode" style="font-size:36px; font-weight:800; color:var(--success); letter-spacing: 5px;"></div>
+                                <div style="font-size:13px; color:var(--text-muted); margin-top:10px;">새로운 학급을 개설하시려면 로그아웃 후 로그인 화면에서 '지역'과 '코드'를 비워두고 관리자로 재접속하세요.</div>
+                            </div>
+                        </div>
+
                         <div id="setupMapCard" class="card" style="display: none;">
                             <h3 style="margin-top:0;"><i class="fa-solid fa-map-location-dot"></i> 우리 학교 위치 자동 검색 및 설정</h3>
                             <p style="color:var(--text-muted); font-size:13px;">학교 이름을 검색하여 지정하면, 학생들의 지도 접속 시 초기 화면이 우리 학교를 중심으로 맞춰집니다.</p>
@@ -206,30 +220,22 @@
                                 💡 학교 위치를 별도로 검색하여 설정하지 않으면, 학급 개설 시 선택하신 지역의 <strong>시·도교육청</strong>이 기본으로 고정됩니다.
                             </p>
                         </div>
-
-                        <div id="setupClassCard" class="card">
-                            <h3 style="margin-top:0;"><i class="fa-solid fa-school"></i> 우리 지역 학급코드 개설 및 확인</h3>
-                            <p style="color:var(--text-muted); font-size:13px;">학생들이 로그인할 때 사용하는 지역과 고유 코드입니다.</p>
-                            <div style="display:flex; gap:10px; margin-top:15px; margin-bottom:15px;">
-                                <select id="teacherRegionSelect" style="flex:1; margin-bottom:0;">
-                                    <option value="" disabled selected>👉 학교가 위치한 지역 선택</option>
-                                    <option value="seoul">서울특별시</option><option value="gyeonggi">경기도</option><option value="incheon">인천광역시</option>
-                                    <option value="gangwon">강원특별자치도</option><option value="chungnam">충청남도</option><option value="chungbuk">충청북도</option>
-                                    <option value="daejeon">대전광역시</option><option value="sejong">세종특별자치시</option><option value="gyeongbuk">경상북도</option>
-                                    <option value="gyeongnam">경상남도</option><option value="daegu">대구광역시</option><option value="busan">부산광역시</option>
-                                    <option value="ulsan">울산광역시</option><option value="jeonbuk">전북특별자치도</option><option value="jeonnam">전라남도</option>
-                                    <option value="gwangju">광주광역시</option><option value="jeju">제주특별자치도</option>
-                                </select>
-                                <button class="action-btn accent-btn" style="flex:1; margin-top:0;" onclick="window.generateClassCode()">학급 개설하기</button>
+                        
+                        <div id="setupApiKeyCard" class="card" style="display: none;">
+                            <h3 style="margin-top:0;"><i class="fa-solid fa-key"></i> 안전한 다중 API 키 설정 (Failover)</h3>
+                            <p style="color:var(--text-muted); font-size:13px;">💡 무료 AI(Gemini)를 교실에서 사용할 때, 여러 학생이 동시에 질문하면 답변이 지연되거나 끊길 수 있습니다. 이를 방지하기 위해 선생님의 API 키를 여러 개 추가해 두시면, 시스템이 알아서 키를 번갈아 사용하여 막힘없이 원활한 수업을 도와줍니다.</p>
+                            
+                            <div style="display:flex; gap:10px; margin-bottom:10px;">
+                                <input type="password" id="teacherApiKeyInput" placeholder="새로운 Gemini API Key 입력" style="flex:2; margin-bottom:0;">
+                                <button class="action-btn" style="width:auto; margin-top:0; background:#f8fafc; color:var(--primary); border:1px solid var(--primary);" onclick="window.addApiKeyUI()">+ 키 추가</button>
                             </div>
-
-                            <div id="generatedCodeDisplay" style="display:none; margin-top:10px; background:rgba(2, 132, 199, 0.1); border:1px solid var(--primary); padding:20px; border-radius:12px; text-align:center;">
-                                <div style="color:var(--text-main); font-size:15px; margin-bottom:10px;">현재 관리 중인 학급코드</div>
-                                <div id="displayFinalCode" style="font-size:36px; font-weight:800; color:var(--primary); letter-spacing: 5px;"></div>
-                                <div style="font-size:13px; color:var(--text-muted); margin-top:15px; background: #ffffff; padding: 12px; border-radius: 8px; border: 1px dashed var(--primary); text-align: left; line-height: 1.5;">
-                                    <strong style="color:var(--primary);">💡 필수 안내:</strong> 새로운 학급을 개설하시려면 우측 상단 '로그아웃' 후 로그인 화면에서 '지역'과 '코드'를 비워두고 관리자로 재접속하세요.
-                                </div>
+                            
+                            <div id="apiKeysList" style="display:flex; flex-direction:column; gap:5px; margin-bottom:20px; max-height:150px; overflow-y:auto; background:#f8fafc; border-radius:8px; padding:10px;">
+                                <div style="font-size:12px; color:var(--text-muted); text-align:center;">등록된 키가 없습니다. 위에서 키를 추가해주세요.</div>
                             </div>
+                            
+                            <input type="text" id="teacherApiModel" placeholder="모델명 (예: gemini-1.5-flash)" value="gemini-1.5-flash" style="margin-bottom:15px;" title="구글 AI 모델명 입력">
+                            <button class="action-btn accent-btn" style="margin-top:0;" onclick="window.saveApiKey()">변경사항 DB에 최종 저장</button>
                         </div>
                     </div>
 
@@ -312,8 +318,7 @@
                                     <div class="panel-content-area">
                                         <div style="font-size:13px; color:var(--text-muted); margin-bottom:10px;">지도에서 기호 2개(출발지, 도착지)를 순서대로 클릭해보세요.</div>
                                         
-                                        <!-- 💡 인벤토리 모달을 띄우는 버튼 -->
-                                        <button class="action-btn" style="background:#f1f5f9; color:var(--primary); border:1px dashed var(--primary); margin-top:0; margin-bottom:10px; font-size:13px; padding:8px;" onclick="window.openMarkerInventory('geo')"><i class="fa-solid fa-box-open"></i> 기호 목록(인벤토리)에서 찾기</button>
+                                        <button class="action-btn" style="background:#f1f5f9; color:var(--primary); border:1px dashed var(--primary); margin-top:0; margin-bottom:10px; font-size:13px; padding:8px;" onclick="window.openMarkerInventory('geo')"><i class="fa-solid fa-list-ul"></i> 범례에서 기호 찾기</button>
 
                                         <div style="font-size:14px; margin-bottom:10px; background:#f8fafc; padding: 10px; border-radius: 8px; border-left: 4px solid var(--primary);">
                                             <div style="margin-bottom:5px;"><strong>출발지:</strong> <span id="geoPointA" style="color:var(--text-muted);">지도나 목록에서 선택하세요</span></div>
@@ -354,15 +359,13 @@
                                     <div class="panel-content-area">
                                         <div style="font-size:13px; color:var(--text-muted); margin-bottom:10px;">마우스 우클릭으로 지도를 상하좌우로 기울이거나 회전할 수 있습니다. 기호 2개를 클릭하세요.</div>
                                         
-                                        <!-- 💡 인벤토리 모달을 띄우는 버튼 -->
-                                        <button class="action-btn" style="background:#f0fdf4; color:var(--success); border:1px dashed var(--success); margin-top:0; margin-bottom:10px; font-size:13px; padding:8px;" onclick="window.openMarkerInventory('elev')"><i class="fa-solid fa-box-open"></i> 기호 목록(인벤토리)에서 찾기</button>
+                                        <button class="action-btn" style="background:#f0fdf4; color:var(--success); border:1px dashed var(--success); margin-top:0; margin-bottom:10px; font-size:13px; padding:8px;" onclick="window.openMarkerInventory('elev')"><i class="fa-solid fa-list-ul"></i> 범례에서 기호 찾기</button>
 
                                         <div style="font-size:14px; margin-bottom:10px; background:#f8fafc; padding: 10px; border-radius: 8px; border-left: 4px solid var(--success);">
                                             <div style="margin-bottom:5px;"><strong>출발지:</strong> <span id="elevPointA" style="color:var(--text-muted);">지도나 목록에서 선택하세요</span></div>
                                             <div><strong>도착지:</strong> <span id="elevPointB" style="color:var(--text-muted);">지도나 목록에서 선택하세요</span></div>
                                         </div>
                                         <div style="display:flex; gap:5px;">
-                                            <!-- 💡 버튼 문구 순화됨 -->
                                             <button class="action-btn" style="padding:8px; font-size:13px; margin-top:0; background:var(--success); color:white; flex:2;" onclick="window.fetchAndDrawElevationProfile()">땅의 높낮이 알아보기 🔍</button>
                                             <button class="action-btn" style="padding:8px; font-size:13px; margin-top:0; background:#f1f5f9; color:var(--text-main); border:1px solid var(--border-color); flex:1;" onclick="window.resetElevSelection()">초기화</button>
                                         </div>
@@ -371,7 +374,6 @@
                             </div>
                             
                             <div id="elevChartContainer" style="display:none; position: absolute; bottom: 20px; left: 20px; z-index: 1000; background: rgba(255, 255, 255, 0.95); padding: 15px; border-radius: 12px; border: 1px solid var(--border-color); box-shadow: 0 4px 15px rgba(0,0,0,0.1); width: 340px; height: 200px;">
-                                <!-- 💡 차트 제목 순화됨 -->
                                 <h4 style="margin-top:0; margin-bottom: 10px; color: var(--text-main); text-align: center; font-size:14px;"><i class="fa-solid fa-chart-area" style="color:var(--success);"></i> ⛰️ 땅의 높낮이</h4>
                                 <div style="width: 100%; height: 140px; position:relative;">
                                     <canvas id="elevationChart"></canvas>
@@ -381,12 +383,12 @@
                     </div>
                 </div>
 
-                <!-- (이하 스테이지 생략, 기존과 동일) -->
                 <div id="stage1-1" class="tab-panel">
                     <div class="sub-tabs">
                         <button class="sub-tab-btn active" onclick="window.switchInnerTab('inner-explore', this)">🔍 1. 현장 문제 탐색</button>
                         <button class="sub-tab-btn" onclick="window.switchInnerTab('inner-board', this)">📌 2. 학급 공유 게시판</button>
                         <button class="sub-tab-btn" onclick="window.switchInnerTab('inner-proposal', this)">📝 3. 해결 제안서 작성</button>
+                        <button class="sub-tab-btn" onclick="window.switchInnerTab('inner-my-proposal', this); window.renderMyProposals();">🙋‍♀️ 4. 나의 제안 관리</button>
                     </div>
 
                     <div id="inner-explore" class="inner-tab-panel active card">
@@ -399,7 +401,7 @@
                         </div>
                         
                         <div style="margin-bottom: 20px; background: #f8fafc; padding: 15px; border-radius: 8px; border: 1px dashed var(--border-color);">
-                            <label style="font-size: 14px; font-weight: 600; color: var(--primary); display:block; margin-bottom:5px;">📸 이미지 자료 첨부 (선택 사항)</label>
+                            <label style="font-size: 14px; font-weight: 600; color: var(--primary); display:block; margin-bottom:5px;">📸 이미지 자료 첨부</label>
                             <input type="file" id="photoInput" accept="image/*" style="margin-bottom: 0; padding: 8px;">
                         </div>
 
@@ -425,9 +427,15 @@
                         <p style="color:var(--text-muted); margin-bottom:5px;">게시판에서 선택한 문제를 해결할 방안을 아래 양식에 맞추어 자세히 작성해주세요.</p>
                         <p style="color:var(--accent); font-size: 13px; margin-bottom:15px; font-weight:bold;">※ 평가 기준: 1. 실현 가능성 / 2. 공공성</p>
                         <div id="selectedProblemDisplay" style="display:none; color:var(--text-main); font-size:18px; font-weight:bold; margin-bottom:15px; background:#f8fafc; padding: 15px; border-radius: 8px; border-left: 5px solid var(--accent);"></div>
-                        <textarea id="proposalText" rows="10" style="line-height: 1.6;"></textarea>
+                        <textarea id="proposalText" rows="12" style="line-height: 1.6;"></textarea>
                         
                         <button id="btn-submit" class="action-btn accent-btn" onclick="window.submitProposal()">AI 1차 심사 후 선생님께 최종 제출하기 <i class="fa-solid fa-file-signature"></i></button>
+                    </div>
+
+                    <div id="inner-my-proposal" class="inner-tab-panel card">
+                        <h3 style="margin-top:0;">🙋‍♀️ 나의 제안 관리</h3>
+                        <p style="color:var(--text-muted);">내가 제출한 제안서의 심사 상태를 확인하고, 반려(재검토) 요청이 온 경우 수정해서 다시 제출할 수 있습니다.</p>
+                        <div id="myProposalsList" style="display: flex; flex-direction: column; gap: 15px; margin-top: 20px;"></div>
                     </div>
                 </div>
 
@@ -438,8 +446,9 @@
 
                 <div id="stage2-1" class="tab-panel">
                     <div class="sub-tabs">
-                        <button class="sub-tab-btn active" onclick="window.switchInnerTab('inner-promo-strategy', this)"><i class="fa-solid fa-lightbulb"></i> 1. 홍보 전략 수립</button>
-                        <button class="sub-tab-btn" onclick="window.switchInnerTab('inner-promo-campaign', this)"><i class="fa-solid fa-rocket"></i> 2. 홍보 기획 및 예산 집행</button>
+                        <button class="sub-tab-btn active" onclick="window.switchInnerTab('inner-promo-strategy', this)"><i class="fa-solid fa-lightbulb"></i> 1. 홍보 계획 세우기</button>
+                        <button class="sub-tab-btn" onclick="window.switchInnerTab('inner-promo-campaign', this)"><i class="fa-solid fa-rocket"></i> 2. 홍보 방법 정하기</button>
+                        <button class="sub-tab-btn" onclick="window.switchInnerTab('inner-my-campaign', this); window.renderMyCampaigns();"><i class="fa-solid fa-user-check"></i> 3. 나의 홍보 관리</button>
                     </div>
 
                     <div id="inner-promo-strategy" class="inner-tab-panel active card">
@@ -474,45 +483,55 @@
                     <div id="inner-promo-campaign" class="inner-tab-panel card">
                         <h3 style="margin-top:0; margin-bottom: 20px;">홍보물 기획 및 마케팅 캠페인 실행</h3>
                         
-                        <div style="background: rgba(2, 132, 199, 0.05); border: 1px solid var(--primary); border-radius: 8px; padding: 15px; margin-bottom: 20px;">
-                            <div style="font-size: 13px; color: var(--text-muted); margin-bottom: 5px;">📍 내가 설정한 타겟 및 슬로건</div>
-                            <strong style="color: var(--primary); display:block;">대상: <span id="displayStrategyTopic">-</span> | 타겟: <span id="displayStrategyTarget">-</span></strong>
-                            <div style="font-size: 16px; font-weight: bold; margin-top: 8px; color: var(--text-main);" id="displayStrategySlogan">"-해당 내용을 1번 탭에서 작성해주세요-"</div>
-                        </div>
-                        
-                        <div style="margin-bottom: 20px;">
-                            <label style="font-size: 14px; font-weight: 600; color: var(--primary); display:block; margin-bottom:5px;">🎨 포스터 등 홍보 이미지 첨부 (선택)</label>
-                            <input type="file" id="promoImageInput" accept="image/*" style="padding: 8px; background: #f8fafc;">
-                        </div>
+                        <div class="split-layout">
+                            <div class="split-left">
+                                <div style="background: rgba(2, 132, 199, 0.05); border: 1px solid var(--primary); border-radius: 8px; padding: 15px;">
+                                    <div style="font-size: 13px; color: var(--text-muted); margin-bottom: 5px;">📍 내가 설정한 타겟 및 슬로건</div>
+                                    <strong style="color: var(--primary); display:block;">대상: <span id="displayStrategyTopic">-</span> | 타겟: <span id="displayStrategyTarget">-</span></strong>
+                                    <div style="font-size: 16px; font-weight: bold; margin-top: 8px; color: var(--text-main);" id="displayStrategySlogan">해당 내용을 1번 탭에서 작성해주세요.</div>
+                                </div>
+                                
+                                <div>
+                                    <label style="font-size: 14px; font-weight: 600; color: var(--primary); display:block; margin-bottom:5px;">🎨 포스터 등 홍보 이미지 첨부</label>
+                                    <input type="file" id="promoImageInput" accept="image/*" style="padding: 8px; background: #f8fafc;">
+                                </div>
 
-                        <div style="margin-bottom: 20px;">
-                            <label style="font-size: 14px; font-weight: 600; color: var(--primary); display:block; margin-bottom:5px;">📝 상세 기획안 및 홍보 문구 작성 (필수)</label>
-                            <textarea id="promoContentInput" rows="5" placeholder="직접 기획한 홍보물에 들어갈 상세한 문구, 대본, 팸플릿 내용 등을 작성해주세요."></textarea>
-                        </div>
+                                <div style="flex: 1; display: flex; flex-direction: column;">
+                                    <label style="font-size: 14px; font-weight: 600; color: var(--primary); display:block; margin-bottom:5px;">📝 상세 기획안 및 홍보 문구 작성</label>
+                                    <textarea id="promoContentInput" style="flex: 1; min-height: 150px; resize: vertical;" placeholder="직접 기획한 홍보물에 들어갈 상세한 문구, 대본, 팸플릿 내용 등을 작성해주세요."></textarea>
+                                </div>
+                            </div>
 
-                        <hr style="border-color: var(--border-color); margin: 30px 0;">
-                        <h4 style="margin-top:0;">📢 광고 매체 및 예산 기획 (필수)</h4>
-                        <div style="display: flex; gap: 15px; margin-top: 10px; margin-bottom: 20px;">
-                            <label style="flex: 1; background: #f1f5f9; border: 1px solid var(--border-color); padding: 15px; border-radius: 8px; cursor: pointer; text-align: center; transition: 0.2s; position: relative;">
-                                <input type="radio" name="mediaOption" value="200" data-name="신문 등 인쇄 매체 광고" style="position: absolute; opacity: 0; width: 0; height: 0;">
-                                <div style="font-size: 20px; margin-bottom: 10px;"><i class="fa-solid fa-newspaper"></i></div><strong>신문 등 인쇄 매체</strong><br><span style="color:var(--text-muted); font-size: 13px;">예상 비용: 200 G</span>
-                            </label>
-                            <label style="flex: 1; background: #f1f5f9; border: 1px solid var(--border-color); padding: 15px; border-radius: 8px; cursor: pointer; text-align: center; transition: 0.2s; position: relative;">
-                                <input type="radio" name="mediaOption" value="500" data-name="지하철/버스 광고판" style="position: absolute; opacity: 0; width: 0; height: 0;">
-                                <div style="font-size: 20px; margin-bottom: 10px;"><i class="fa-solid fa-bus"></i></div><strong>대중교통 광고판</strong><br><span style="color:var(--text-muted); font-size: 13px;">예상 비용: 500 G</span>
-                            </label>
-                            <label style="flex: 1; background: #f1f5f9; border: 1px solid var(--border-color); padding: 15px; border-radius: 8px; cursor: pointer; text-align: center; transition: 0.2s; position: relative;">
-                                <input type="radio" name="mediaOption" value="800" data-name="SNS 타겟 광고" style="position: absolute; opacity: 0; width: 0; height: 0;">
-                                <div style="font-size: 20px; margin-bottom: 10px;"><i class="fa-solid fa-users"></i></div><strong>SNS 타겟 광고</strong><br><span style="color:var(--text-muted); font-size: 13px;">예상 비용: 800 G</span>
-                            </label>
-                        </div>
+                            <div class="split-right">
+                                <h4 style="margin-top:0; margin-bottom:5px; color: var(--primary); border-bottom: 1px dashed var(--border-color); padding-bottom: 10px;">📢 광고 매체 및 예산 기획</h4>
+                                <div style="display: flex; flex-direction: column; gap: 10px;">
+                                    <label class="media-radio-card">
+                                        <input type="radio" name="mediaOption" value="200" data-name="신문 등 인쇄 매체 광고">
+                                        <div class="media-icon"><i class="fa-solid fa-newspaper"></i></div>
+                                        <div class="media-info"><strong>신문 등 인쇄 매체</strong><span>예상 비용: 200 G</span></div>
+                                    </label>
+                                    <label class="media-radio-card">
+                                        <input type="radio" name="mediaOption" value="500" data-name="지하철/버스 광고판">
+                                        <div class="media-icon"><i class="fa-solid fa-bus"></i></div>
+                                        <div class="media-info"><strong>대중교통 광고판</strong><span>예상 비용: 500 G</span></div>
+                                    </label>
+                                    <label class="media-radio-card">
+                                        <input type="radio" name="mediaOption" value="800" data-name="SNS 타겟 광고">
+                                        <div class="media-icon"><i class="fa-solid fa-users"></i></div>
+                                        <div class="media-info"><strong>SNS 타겟 광고</strong><span>예상 비용: 800 G</span></div>
+                                    </label>
+                                </div>
 
-                        <div style="background: #f8fafc; padding: 15px; border-radius: 8px; border: 1px dashed var(--border-color); margin-bottom: 20px;">
-                            <label style="display:block; font-size:14px; font-weight:bold; margin-bottom:10px; color:var(--primary);">💡 학생 자율 매체 및 예산 기획하기 (선택)</label>
-                            <div style="display:flex; gap:10px; align-items:center;">
-                                <input type="radio" name="mediaOption" value="custom" id="customMediaRadio" style="width:20px; height:20px;">
-                                <input type="text" id="customMediaName" placeholder="새로운 매체명 (예: 메타버스 가상현실 홍보관)" style="flex:2;" onfocus="document.getElementById('customMediaRadio').checked = true">
-                                <input type="number" id="customMediaBudget" placeholder="필요 예산 (G)" style="flex:1;" onfocus="document.getElementById('customMediaRadio').checked = true">
+                                <div style="background: #ffffff; padding: 15px; border-radius: 8px; border: 1px dashed var(--border-color); margin-top: auto;">
+                                    <label style="display:block; font-size:14px; font-weight:bold; margin-bottom:10px; color:var(--primary);">💡 나만의 홍보 전략</label>
+                                    <div style="display:flex; flex-direction:column; gap:10px;">
+                                        <div style="display:flex; align-items:center; gap:8px; display:none;">
+                                            <input type="radio" name="mediaOption" value="custom" id="customMediaRadio" style="width:18px; height:18px; margin:0; accent-color:var(--accent);">
+                                        </div>
+                                        <input type="text" id="customMediaName" placeholder="새로운 매체명 (예: 메타버스 홍보관)" onfocus="document.getElementById('customMediaRadio').checked = true">
+                                        <input type="number" id="customMediaBudget" placeholder="필요 예산 (G)" onfocus="document.getElementById('customMediaRadio').checked = true">
+                                    </div>
+                                </div>
                             </div>
                         </div>
 
@@ -521,6 +540,12 @@
                         <div id="campaignResultArea" style="display:none; margin-top: 20px; padding: 20px; background: rgba(2, 132, 199, 0.05); border-radius: 12px; border: 1px solid var(--primary); text-align: center;">
                             <div id="campaignFeedback" style="line-height: 1.6; font-size: 15px; color: var(--text-main); text-align: left;"></div>
                         </div>
+                    </div>
+
+                    <div id="inner-my-campaign" class="inner-tab-panel card">
+                        <h3 style="margin-top:0;">🙋‍♀️ 나의 홍보 관리</h3>
+                        <p style="color:var(--text-muted);">내가 제출한 마케팅 전략의 심사 상태를 확인하고, 반려(재검토) 요청이 온 경우 수정해서 다시 제출할 수 있습니다.</p>
+                        <div id="myCampaignsList" style="display: flex; flex-direction: column; gap: 15px; margin-top: 20px;"></div>
                     </div>
                 </div>
 
@@ -562,10 +587,9 @@
         </div>
     </div>
 
-    <!-- 💡 신규: 2단계 분석 시 기호 목록을 띄워주는 인벤토리 창 모달 -->
     <div id="markerInventoryModal" class="modal-overlay">
         <div class="modal-content" style="width: 350px;">
-            <h3 style="margin-top:0; color:var(--primary);">🎒 우리 반 기호 목록</h3>
+            <h3 style="margin-top:0; color:var(--primary);">🎒 우리 반 범례 목록</h3>
             <p style="font-size:13px; color:var(--text-muted); margin-bottom:15px;">출발지 또는 도착지로 지정할 장소를 선택하세요.</p>
             <div id="inventoryList" style="max-height: 300px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px;"></div>
             <button class="btn btn-cancel" style="width:100%; margin-top:15px;" onclick="document.getElementById('markerInventoryModal').classList.remove('active')">닫기</button>
