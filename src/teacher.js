@@ -186,6 +186,24 @@ window.showProposalVersion = function(proposalId, round, btnEl) {
     }
 }
 
+// 홍보 전략 안에서 1차 / 2차 / 3차 전환
+window.showCampaignVersion = function(campaignId, round, btnEl) {
+    document.querySelectorAll(`.cver-panel-${campaignId}`).forEach(el => el.style.display = 'none');
+    const panel = document.getElementById(`cver-panel-${campaignId}-${round}`);
+    if (panel) panel.style.display = 'block';
+
+    document.querySelectorAll(`.cver-tab-${campaignId}`).forEach(el => {
+        el.style.background = '#ffffff';
+        el.style.color = 'var(--text-muted)';
+        el.style.borderColor = 'var(--border-color)';
+    });
+    if (btnEl) {
+        btnEl.style.background = 'var(--primary)';
+        btnEl.style.color = '#ffffff';
+        btnEl.style.borderColor = 'var(--primary)';
+    }
+}
+
 // ==========================================
 // 학생 상세 보기
 // ==========================================
@@ -347,7 +365,7 @@ window.showStudentDetails = function(sNum, force = false) {
                 reviewUi = `
                     <div style="margin-top:15px; border-top:2px dashed var(--border-color); padding-top:15px;">
                         <strong style="color:var(--primary); font-size:14px; display:block; margin-bottom:5px;">👨‍🏫 마케팅 전략 승인 (최종 성과 산정)</strong>
-                        <div style="font-size:13px; color:var(--text-muted); margin-bottom:10px;">아래는 시스템이 산정한 1차 예상치입니다. 선생님께서 수치를 직접 조정하여 최종 승인할 수 있습니다.</div>
+                        <div style="font-size:13px; color:var(--text-muted); margin-bottom:10px;">🤖 AI 담당관이 기획안을 검토하고 제안한 예상 성과입니다. 선생님께서 조정하여 최종 확정해주세요. 승인하시면 학생에게 성과가 지급되고, AI 의견과 선생님 코멘트가 함께 공개됩니다.</div>
                         <div style="display:flex; gap:10px; align-items:center; margin-bottom: 10px; background:#f8fafc; padding:10px; border-radius:6px; border:1px solid var(--border-color);">
                             <div><strong>👥 방문객:</strong> <input type="number" id="c-vis-${c.id}" value="${c.expectedVisitor || 0}" style="width:70px; padding:5px; border-radius:4px; border:1px solid #cbd5e1;"> 명</div>
                             <div><strong>⭐ 평판:</strong> <input type="number" id="c-rep-${c.id}" value="${c.expectedReputation || 0}" style="width:70px; padding:5px; border-radius:4px; border:1px solid #cbd5e1;"> 점</div>
@@ -362,24 +380,62 @@ window.showStudentDetails = function(sNum, force = false) {
 
             const imageHtml = c.imageUrl ? `<img src="${c.imageUrl}" style="width: 100%; max-height: 250px; object-fit: contain; background: #e2e8f0; border-radius: 8px; margin-bottom: 15px; border: 1px solid var(--border-color);">` : '';
 
+            // 이력이 없는 옛 데이터도 1차로 취급
+            const cVersions = (Array.isArray(c.versions) && c.versions.length > 0) ? c.versions : [{
+                round: 1, topic: c.topic || '', target: c.target || '', slogan: c.slogan || '',
+                media: c.media || '', cost: c.cost || 0, content: c.content || '',
+                aiFeedback: c.aiFeedback || '',
+                expectedVisitor: c.expectedVisitor || 0, expectedReputation: c.expectedReputation || 0,
+                teacherFeedback: c.teacherFeedback || '', status: c.status || 'waiting', submittedAt: c.submittedAt || ''
+            }];
+            const cLatestRound = cVersions[cVersions.length - 1].round;
+
+            let cVerTabs = '';
+            if (cVersions.length > 1) {
+                cVerTabs = `<div style="display:flex; gap:6px; margin-bottom:12px; flex-wrap:wrap; align-items:center;">
+                    <span style="font-size:12px; color:var(--text-muted); font-weight:bold; margin-right:4px;">📚 발전 과정</span>`;
+                cVersions.forEach(v => {
+                    const isLatest = v.round === cLatestRound;
+                    cVerTabs += `<button class="cver-tab-${c.id}" onclick="window.showCampaignVersion(${c.id}, ${v.round}, this)"
+                        style="padding:5px 12px; font-size:12px; font-weight:bold; border-radius:6px; cursor:pointer;
+                        border:1px solid ${isLatest ? 'var(--primary)' : 'var(--border-color)'};
+                        background:${isLatest ? 'var(--primary)' : '#ffffff'};
+                        color:${isLatest ? '#ffffff' : 'var(--text-muted)'};">${v.round}차${isLatest ? ' (최신)' : ''}</button>`;
+                });
+                cVerTabs += `</div>`;
+            }
+
+            let cVerPanels = '';
+            cVersions.forEach(v => {
+                const isLatest = v.round === cLatestRound;
+                const vStatusText = v.status === 'approved' ? '✅ 승인됨' : (v.status === 'rejected' ? '❌ 재검토 요청됨' : '⏳ 심사 대기중');
+                cVerPanels += `
+                <div id="cver-panel-${c.id}-${v.round}" class="cver-panel-${c.id}" style="display:${isLatest ? 'block' : 'none'};">
+                    ${cVersions.length > 1 ? `<div style="font-size:12px; color:var(--text-muted); margin-bottom:8px;">${v.round}차 제출 ${v.submittedAt ? '(' + v.submittedAt + ')' : ''} · ${vStatusText} · 매체 ${v.media || '미지정'} (${v.cost || 0}G)</div>` : ''}
+                    <div style="font-size: 13px; color: var(--text-muted); background: #ffffff; padding: 10px; border-radius: 8px; border: 1px solid var(--border-color); margin-bottom: 5px;">
+                        <div style="margin-bottom: 3px;"><strong style="color:var(--primary);">🎯 홍보물:</strong> ${v.topic || "미지정"}</div>
+                        <div><strong style="color:var(--primary);">👥 홍보 대상:</strong> ${v.target || "미지정"}</div>
+                    </div>
+                    <div style="font-size: 16px; font-weight: bold; color: var(--text-main); margin-bottom: 10px; margin-top: 5px;">"${v.slogan || ""}"</div>
+                    <div style="font-size:14px; line-height:1.6; color:var(--text-main); margin-bottom:15px; background: white; padding: 15px; border-radius: 8px; border: 1px solid #e2e8f0;">${(v.content || '').replace(/\n/g, '<br>')}</div>
+                    <div style="font-size:13px; background:rgba(2, 132, 199, 0.05); padding:10px; border-radius:6px; border:1px solid rgba(2, 132, 199, 0.2);">
+                        <strong>🤖 AI 1차 의견:</strong> ${v.aiFeedback || '(AI 의견이 없습니다)'}
+                        <div style="margin-top:6px;"><strong style="color:var(--primary);">AI 제안 성과:</strong> 방문객 +${v.expectedVisitor || 0}명 · 평판 +${v.expectedReputation || 0}점</div>
+                    </div>
+                    ${v.teacherFeedback ? `<div style="font-size:13px; margin-top:10px; background:rgba(22, 163, 74, 0.1); padding:10px; border-radius:6px; border:1px solid rgba(22, 163, 74, 0.3);"><strong>👨‍🏫 선생님 코멘트:</strong> ${v.teacherFeedback}</div>` : ''}
+                </div>`;
+            });
+
             chtml += `
             <div class="carousel-slide slide-campaign ${index === activeCampaign ? 'active' : ''}">
                 <div style="background:#f1f5f9; padding:20px; border-radius:12px; border: 1px solid ${c.status === 'waiting' ? 'var(--accent)' : 'var(--border-color)'};">
-                    <div style="display:flex; justify-content:space-between; margin-bottom:10px;">
+                    <div style="display:flex; justify-content:space-between; margin-bottom:10px; align-items:center;">
                         <div style="font-weight:bold; color:var(--primary); font-size:16px;">사용 매체: ${c.media || "미지정"} (${c.cost || 0}G)</div>
                         <div style="font-size:13px; font-weight:bold;">${statusBadge}</div>
                     </div>
                     ${imageHtml}
-                    <div style="font-size: 13px; color: var(--text-muted); background: #ffffff; padding: 10px; border-radius: 8px; border: 1px solid var(--border-color); margin-bottom: 5px;">
-                        <div style="margin-bottom: 3px;"><strong style="color:var(--primary);">🎯 홍보 대상:</strong> ${c.topic || "미지정"}</div>
-                        <div><strong style="color:var(--primary);">👥 타겟 설정:</strong> ${c.target || "미지정"}</div>
-                    </div>
-                    <div style="font-size: 16px; font-weight: bold; color: var(--text-main); margin-bottom: 10px; margin-top: 5px;">"${c.slogan || ""}"</div>
-                    <div style="font-size:14px; line-height:1.6; color:var(--text-main); margin-bottom:15px; background: white; padding: 15px; border-radius: 8px; border: 1px solid #e2e8f0;">${(c.content || '').replace(/\n/g, '<br>')}</div>
-                    <div style="font-size:13px; background:rgba(2, 132, 199, 0.05); padding:10px; border-radius:6px; border:1px solid rgba(2, 132, 199, 0.2);">
-                        <strong>📊 시스템 예상 성과:</strong> 방문객 <span style="color:#d97706;">+${c.expectedVisitor || 0}명</span> | 평판 <span style="color:#ef4444;">+${c.expectedReputation || 0}점</span>
-                    </div>
-                    ${c.status !== 'waiting' && c.teacherFeedback ? `<div style="font-size:13px; margin-top:10px; background:rgba(22, 163, 74, 0.1); padding:10px; border-radius:6px; border:1px solid rgba(22, 163, 74, 0.3);"><strong>👨‍🏫 선생님 코멘트:</strong> ${c.teacherFeedback}</div>` : ''}
+                    ${cVerTabs}
+                    ${cVerPanels}
                     ${reviewUi}
                 </div>
             </div>`;
@@ -427,9 +483,12 @@ window.submitTeacherReview = async function(proposalId, isApproved, sNum) {
     if (!targetProposal) return alert("제안서를 찾을 수 없습니다.");
     if (targetProposal.status !== 'waiting') return alert("이미 처리된 제안서입니다.");
 
-    const feedbackText = feedbackEl.value.trim() || (isApproved
-        ? '훌륭한 제안입니다! 우리 지역을 위해 꼭 필요한 아이디어네요.'
-        : '조금 더 구체적이고 현실적인 방안으로 수정해서 다시 제안해주세요.');
+    const typed = feedbackEl.value.trim();
+    if (!isApproved && typed.length < 5) {
+        feedbackEl.focus();
+        return alert("재검토를 요청할 때는 어떤 점을 고치면 좋을지 꼭 적어주세요.\n학생이 무엇을 보완해야 할지 알 수 있어야 합니다.");
+    }
+    const feedbackText = typed || '훌륭한 제안입니다! 우리 지역을 위해 꼭 필요한 아이디어네요.';
 
     let finalBudget = 0;
     if (isApproved) {
@@ -491,9 +550,12 @@ window.submitCampaignReview = async function(campaignId, isApproved, sNum) {
     if (!targetCampaign) return alert("캠페인을 찾을 수 없습니다.");
     if (targetCampaign.status !== 'waiting') return alert("이미 처리된 캠페인입니다.");
 
-    const feedbackText = feedbackEl.value.trim() || (isApproved
-        ? '멋진 마케팅 전략입니다! 예산이 성공적으로 집행되었습니다.'
-        : '전략을 조금 더 보완해서 다시 제출해주세요.');
+    const typedC = feedbackEl.value.trim();
+    if (!isApproved && typedC.length < 5) {
+        feedbackEl.focus();
+        return alert("재검토를 요청할 때는 어떤 점을 고치면 좋을지 꼭 적어주세요.\n학생이 무엇을 보완해야 할지 알 수 있어야 합니다.");
+    }
+    const feedbackText = typedC || '멋진 마케팅 전략입니다! 예산이 성공적으로 집행되었습니다.';
 
     let finalVis = targetCampaign.expectedVisitor || 0;
     let finalRep = targetCampaign.expectedReputation || 0;
@@ -512,6 +574,14 @@ window.submitCampaignReview = async function(campaignId, isApproved, sNum) {
     targetCampaign.teacherFeedback = feedbackText;
     targetCampaign.expectedVisitor = finalVis;
     targetCampaign.expectedReputation = finalRep;
+
+    if (Array.isArray(targetCampaign.versions) && targetCampaign.versions.length > 0) {
+        const latestC = targetCampaign.versions[targetCampaign.versions.length - 1];
+        latestC.status = targetCampaign.status;
+        latestC.teacherFeedback = feedbackText;
+        latestC.expectedVisitor = finalVis;
+        latestC.expectedReputation = finalRep;
+    }
 
     if (isApproved && !targetCampaign.rewardPaid) {
         try {

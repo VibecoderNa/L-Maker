@@ -448,7 +448,7 @@ window.getAIConsulting = async function() {
     const slogan = document.getElementById('promoSlogan').value.trim();
 
     if (!topic || !target || !slogan) {
-        return window.showNotification("홍보 대상, 타겟 설정, 슬로건을 모두 작성한 후 조언을 구해보세요.");
+        return window.showNotification("홍보물, 홍보 대상, 슬로건을 모두 작성한 후 조언을 구해보세요.");
     }
 
     window.isAILoading = true;
@@ -461,8 +461,8 @@ window.getAIConsulting = async function() {
     try {
         const prompt = `너는 초등학교 4학년 학생의 지역 홍보 기획을 돕는 친절한 마케팅 전문가 AI야.
 
-홍보 대상: ${topic}
-홍보 타겟: ${target}
+홍보할 거리(홍보물): ${topic}
+홍보 대상(누구에게): ${target}
 핵심 슬로건: ${slogan}
 
 이 기획에서 잘한 점을 먼저 구체적으로 칭찬해줘.

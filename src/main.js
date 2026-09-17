@@ -197,44 +197,91 @@ window.resetClassAiUsage = async function() {
 
 // ==========================================
 // 교사용 API 키 관리
+// 화면에는 'API 1번'처럼만 표시하고, 키 문자열은 '자세히 보기'를 눌러야 일부만 보입니다.
 // ==========================================
+window.apiKeyRecords = [];   // [{ key, createdAt }]
+
+// DB에서 읽은 값을 표준 형태로 맞춘다 (예전 문자열 배열도 그대로 읽힘)
+window.setApiKeyRecords = function(raw) {
+    const arr = Array.isArray(raw) ? raw : [];
+    window.apiKeyRecords = arr.map(item => {
+        if (typeof item === 'string') return { key: item.trim(), createdAt: '' };
+        if (item && typeof item === 'object') return { key: String(item.key || '').trim(), createdAt: item.createdAt || '' };
+        return { key: '', createdAt: '' };
+    }).filter(r => r.key.length > 0);
+    window.dynamicApiKeys = window.apiKeyRecords.map(r => r.key);
+    return window.dynamicApiKeys;
+};
+
 window.addApiKeyUI = function() {
     const input = document.getElementById('teacherApiKeyInput');
     const val = input.value.trim();
     if(!val) return;
-    if(window.dynamicApiKeys.includes(val)) return window.showNotification("이미 등록된 키입니다.");
-    window.dynamicApiKeys.push(val);
+    if(window.apiKeyRecords.some(r => r.key === val)) return window.showNotification("이미 등록된 키입니다.");
+    window.apiKeyRecords.push({ key: val, createdAt: window.getTodayStr() });
+    window.dynamicApiKeys = window.apiKeyRecords.map(r => r.key);
     input.value = '';
     window.renderApiKeysUI();
+    window.showNotification("키를 추가했습니다. 아래 [변경사항 DB에 최종 저장]을 눌러야 반영됩니다.");
 };
 
 window.removeApiKeyUI = function(index) {
-    window.dynamicApiKeys.splice(index, 1);
+    const rec = window.apiKeyRecords[index];
+    if (!rec) return;
+    if (!confirm(`API ${index + 1}번 키를 목록에서 삭제할까요?\n(저장 버튼을 눌러야 최종 반영됩니다)`)) return;
+    window.apiKeyRecords.splice(index, 1);
+    window.dynamicApiKeys = window.apiKeyRecords.map(r => r.key);
     window.renderApiKeysUI();
+};
+
+// '자세히 보기'를 누르면 앞 6자리만 잠깐 보여준다
+window.toggleApiKeyDetail = function(index, btnEl) {
+    const box = document.getElementById(`apikey-detail-${index}`);
+    if (!box) return;
+    const opened = box.style.display !== 'none';
+    box.style.display = opened ? 'none' : 'block';
+    if (btnEl) btnEl.innerHTML = opened
+        ? '<i class="fa-solid fa-eye"></i> 자세히 보기'
+        : '<i class="fa-solid fa-eye-slash"></i> 숨기기';
 };
 
 window.renderApiKeysUI = function() {
     const list = document.getElementById('apiKeysList');
     if(!list) return;
-    list.innerHTML = '';
-    if (window.dynamicApiKeys.length === 0) {
-        list.innerHTML = '<div style="font-size:12px; color:var(--text-muted); text-align:center;">등록된 키가 없습니다. 위에서 키를 추가해주세요.</div>';
+
+    if (!window.apiKeyRecords || window.apiKeyRecords.length === 0) {
+        list.innerHTML = '<div style="font-size:13px; color:var(--text-muted); text-align:center; padding:20px;">아직 등록된 키가 없습니다.<br>위 입력칸에 Gemini API Key를 붙여넣고 [+ 키 추가]를 눌러주세요.</div>';
         return;
     }
-    window.dynamicApiKeys.forEach((key, i) => {
-        let masked = key;
-        if(key.length > 12) masked = key.substring(0, 8) + "..." + key.substring(key.length - 4);
-        list.innerHTML += `<div style="display:flex; justify-content:space-between; align-items:center; background:#ffffff; padding:8px 12px; border-radius:6px; font-size:13px; border:1px solid var(--border-color); margin-bottom:5px;">
-            <span style="font-family:monospace; font-weight:bold; color:var(--primary);">${masked}</span>
-            <button style="background:none; border:none; color:#ef4444; cursor:pointer;" onclick="window.removeApiKeyUI(${i})"><i class="fa-solid fa-xmark"></i> 삭제</button>
+
+    list.innerHTML = window.apiKeyRecords.map((rec, i) => {
+        const dateText = rec.createdAt ? `등록일 ${rec.createdAt}` : '등록일 정보 없음';
+        const head = rec.key.length > 6 ? rec.key.substring(0, 6) : rec.key;
+        return `
+        <div style="background:#ffffff; border:1px solid var(--border-color); border-radius:10px; padding:14px 16px; margin-bottom:8px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap;">
+                <div>
+                    <strong style="color:var(--primary); font-size:15px;">🔑 API ${i + 1}번</strong>
+                    <span style="margin-left:8px; font-size:11px; font-weight:bold; color:#166534; background:#dcfce7; padding:3px 8px; border-radius:12px;">사용 중</span>
+                    <div style="font-size:12px; color:var(--text-muted); margin-top:4px;">${dateText}</div>
+                </div>
+                <div style="display:flex; gap:6px;">
+                    <button style="background:#f8fafc; border:1px solid var(--border-color); color:var(--text-main); padding:6px 12px; border-radius:6px; cursor:pointer; font-size:12px;" onclick="window.toggleApiKeyDetail(${i}, this)"><i class="fa-solid fa-eye"></i> 자세히 보기</button>
+                    <button style="background:#fef2f2; border:1px solid #fca5a5; color:#ef4444; padding:6px 12px; border-radius:6px; cursor:pointer; font-size:12px;" onclick="window.removeApiKeyUI(${i})"><i class="fa-solid fa-xmark"></i> 삭제</button>
+                </div>
+            </div>
+            <div id="apikey-detail-${i}" style="display:none; margin-top:10px; background:#f8fafc; border:1px dashed var(--border-color); border-radius:6px; padding:10px;">
+                <div style="font-family:monospace; font-size:13px; color:var(--text-main); letter-spacing:1px;">${head}••••••••••••••••</div>
+                <div style="font-size:11px; color:var(--text-muted); margin-top:6px;">키 전체는 화면에 표시되지 않습니다. 확인이 필요하시면 Google AI Studio에서 대조해주세요.</div>
+            </div>
         </div>`;
-    });
+    }).join('');
 };
 
 window.saveApiKey = async function() {
     const model = document.getElementById('teacherApiModel').value.trim() || "gemini-3.8-flash";
     try {
-        await setDoc(doc(db, "classes", window.classKey), { apiKeys: window.dynamicApiKeys, apiModel: model }, { merge: true });
+        await setDoc(doc(db, "classes", window.classKey), { apiKeys: window.apiKeyRecords, apiModel: model }, { merge: true });
         window.dynamicApiModel = model;
         // 이번 접속에서 제외해 둔 키 상태를 초기화 (새 키를 넣었을 수 있으므로)
         window.apiKeyDisabled = {};
@@ -424,12 +471,12 @@ window.initSystem = async function(isTeacherModeParam = false) {
                 const data = docSnap.data(); 
                 
                 if (data.apiKeys && Array.isArray(data.apiKeys) && data.apiKeys.length > 0) {
-                    window.dynamicApiKeys = data.apiKeys;
+                    window.setApiKeyRecords(data.apiKeys);
                 } else if (data.apiKey) {
-                    window.dynamicApiKeys = [data.apiKey];
+                    window.setApiKeyRecords([data.apiKey]);
                 } else if (!window.classKey.endsWith("_0000")) {
                     // 심사용 학급은 마스터 학급의 키를 빌려 쓰므로 여기서 비우지 않는다
-                    window.dynamicApiKeys = [];
+                    window.setApiKeyRecords([]);
                 }
                 if (window.isTeacherMode) window.renderApiKeysUI();
 
@@ -443,9 +490,9 @@ window.initSystem = async function(isTeacherModeParam = false) {
                         if (masterSnap.exists()) {
                             const mData = masterSnap.data();
                             if (mData.apiKeys && Array.isArray(mData.apiKeys) && mData.apiKeys.length > 0) {
-                                window.dynamicApiKeys = mData.apiKeys;
+                                window.setApiKeyRecords(mData.apiKeys);
                             } else if (mData.apiKey) {
-                                window.dynamicApiKeys = [mData.apiKey];
+                                window.setApiKeyRecords([mData.apiKey]);
                             }
                             if (mData.apiModel && !data.apiModel) window.dynamicApiModel = mData.apiModel;
                             if (window.isTeacherMode) window.renderApiKeysUI();
@@ -479,9 +526,9 @@ window.initSystem = async function(isTeacherModeParam = false) {
                     if (masterSnap.exists()) {
                         const mData = masterSnap.data();
                         if (mData.apiKeys && Array.isArray(mData.apiKeys) && mData.apiKeys.length > 0) {
-                            window.dynamicApiKeys = mData.apiKeys;
+                            window.setApiKeyRecords(mData.apiKeys);
                         } else if (mData.apiKey) {
-                            window.dynamicApiKeys = [mData.apiKey];
+                            window.setApiKeyRecords([mData.apiKey]);
                         }
                         if (mData.apiModel) window.dynamicApiModel = mData.apiModel;
                         if (window.isTeacherMode) window.renderApiKeysUI();
@@ -628,9 +675,9 @@ window.ensureApiKeysReady = async function(maxWaitMs = 6000) {
             if (masterSnap.exists()) {
                 const mData = masterSnap.data();
                 if (Array.isArray(mData.apiKeys) && mData.apiKeys.length > 0) {
-                    window.dynamicApiKeys = mData.apiKeys;
+                    window.setApiKeyRecords(mData.apiKeys);
                 } else if (mData.apiKey) {
-                    window.dynamicApiKeys = [mData.apiKey];
+                    window.setApiKeyRecords([mData.apiKey]);
                 }
                 if (mData.apiModel && !window.dynamicApiModel) window.dynamicApiModel = mData.apiModel;
             }

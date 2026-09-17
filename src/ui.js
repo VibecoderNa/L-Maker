@@ -11,6 +11,13 @@ import { doc, setDoc } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-
 window.currentEditingProposalId = null;
 window.currentEditingCampaignId = null;
 
+// 1번 탭('홍보 계획 세우기')을 실제로 거쳤는지 표시한다.
+// 심사용 계정처럼 입력칸이 미리 채워져 있어도, 이 버튼을 누르지 않으면 제출할 수 없다.
+window.promoPlanConfirmed = false;
+
+// 홍보 전략 이력 보관 최대 차수
+window.MAX_CAMPAIGN_VERSIONS = 3;
+
 // ==========================================
 // 공통 도우미 (학생이 입력한 <, ' 등으로 화면이 깨지지 않도록 처리)
 // ==========================================
@@ -37,6 +44,26 @@ window.getProposalVersions = function(p) {
         teacherBudget: p.teacherBudget || 0,
         status: p.status || 'waiting',
         submittedAt: p.submittedAt || ''
+    }];
+}
+
+// 홍보 전략의 차수 이력을 꺼낸다 (옛 데이터는 1차로 변환)
+window.getCampaignVersions = function(c) {
+    if (Array.isArray(c.versions) && c.versions.length > 0) return c.versions;
+    return [{
+        round: 1,
+        topic: c.topic || '',
+        target: c.target || '',
+        slogan: c.slogan || '',
+        media: c.media || '',
+        cost: c.cost || 0,
+        content: c.content || '',
+        aiFeedback: c.aiFeedback || '',
+        expectedVisitor: c.expectedVisitor || 0,
+        expectedReputation: c.expectedReputation || 0,
+        teacherFeedback: c.teacherFeedback || '',
+        status: c.status || 'waiting',
+        submittedAt: c.submittedAt || ''
     }];
 }
 
@@ -312,7 +339,7 @@ window.goToPromoStep2 = function() {
     const slogan = document.getElementById('promoSlogan').value.trim().replace(/^["']+|["']+$/g, '');
 
     if (!topic || !target || !slogan) {
-        return window.showNotification("홍보 대상, 타겟 설정, 핵심 슬로건을 모두 작성해주세요.");
+        return window.showNotification("홍보물, 홍보 대상, 핵심 슬로건을 모두 작성해주세요.");
     }
 
     document.getElementById('displayStrategyTopic').innerText = topic;
@@ -320,6 +347,7 @@ window.goToPromoStep2 = function() {
     document.getElementById('displayStrategySlogan').innerText = `"${slogan}"`;
 
     window.currentEditingCampaignId = null;
+    window.promoPlanConfirmed = true;   // 1번 탭을 정상적으로 거쳤음
 
     if (window.userKey === "0") {
         document.getElementById('promoContentInput').value = "[기획 제목] 초등학생 추천! 우리 동네 스탬프 투어 팸플릿\n[기획 의도]\n다른 지역 친구들과 가족들이 주말에 찾아오기 쉽게, 어린이 시선에서 재미있는 코스를 정리한 팸플릿을 만듭니다.\n[홍보 문구 및 내용]\n1. 핵심 문구: \"이번 주말 어디 가지? 초등학생이 찾아낸 우리 동네 보물지도로 출발!\"\n2. 추천 코스:\n - 1코스: 자연 속 생태 체험장\n - 2코스: 맛있는 특산물 맛집과 시장\n - 3코스: 재미있는 박물관과 공예 체험\n3. 특별 이벤트: 3개 코스 도장을 다 찍어오면 우리 동네 귀여운 캐릭터 인형을 선물로 드립니다!\n[기대 효과]\n인근 학교와 도서관에 배포하여 주말에 놀러 오는 가족 손님을 늘리고 우리 동네를 널리 알립니다.";
@@ -329,8 +357,26 @@ window.goToPromoStep2 = function() {
         document.getElementById('promoContentInput').value = '';
     }
 
-    window.showNotification("전략 수립 완료! 멋진 포스터와 기획안을 작성해보세요.");
+    window.showNotification("홍보 계획을 세웠습니다! 이제 홍보 방법을 정해볼까요?");
     window.switchInnerTab('inner-promo-campaign', document.querySelectorAll('#stage2-1 .sub-tab-btn')[1]);
+}
+
+// 홍보 전략의 차수 전환 (학생 화면)
+window.showMyCampaignVersion = function(campaignId, round, btnEl) {
+    document.querySelectorAll(`.mycver-panel-${campaignId}`).forEach(el => el.style.display = 'none');
+    const panel = document.getElementById(`mycver-panel-${campaignId}-${round}`);
+    if (panel) panel.style.display = 'block';
+
+    document.querySelectorAll(`.mycver-tab-${campaignId}`).forEach(el => {
+        el.style.background = '#ffffff';
+        el.style.color = 'var(--text-muted)';
+        el.style.borderColor = 'var(--border-color)';
+    });
+    if (btnEl) {
+        btnEl.style.background = 'var(--primary)';
+        btnEl.style.color = '#ffffff';
+        btnEl.style.borderColor = 'var(--primary)';
+    }
 }
 
 window.renderMyCampaigns = function() {
@@ -347,37 +393,92 @@ window.renderMyCampaigns = function() {
     myCamps.forEach(c => {
         let statusHtml = '';
         let btnHtml = '';
-        let feedbackHtml = '';
 
         if (c.status === 'waiting') {
             statusHtml = '<span style="color:#d97706; font-weight:bold; background:#fef08a; padding:4px 8px; border-radius:4px; font-size:12px;">⏳ 심사 대기중</span>';
-            feedbackHtml = `<div style="font-size:13px; color:#b45309; background:#fef3c7; padding:12px; border-radius:8px; border:1px solid #fde68a; margin-top:10px; text-align:center;">
-                <strong>⏳ 선생님이 홍보 전략을 검토하고 계십니다.</strong><br>승인되면 방문객과 평판이 올라갑니다.
-            </div>`;
         } else if (c.status === 'approved') {
             statusHtml = '<span style="color:#166534; font-weight:bold; background:#bbf7d0; padding:4px 8px; border-radius:4px; font-size:12px;">✅ 홍보 성공!</span>';
-            feedbackHtml = `<div style="font-size:13px; background:rgba(22, 163, 74, 0.1); padding:12px; border-radius:8px; border:1px solid rgba(22, 163, 74, 0.35); color:#166534; margin-top:10px;">
-                <strong>🎉 홍보 효과:</strong> 방문객 +${c.expectedVisitor || 0}명 · 평판 +${c.expectedReputation || 0}점
-                ${c.teacherFeedback ? `<br><strong>👨‍🏫 선생님 코멘트:</strong> ${window.textToHtml(c.teacherFeedback)}` : ''}
-            </div>`;
         } else if (c.status === 'rejected') {
             statusHtml = '<span style="color:#991b1b; font-weight:bold; background:#fecaca; padding:4px 8px; border-radius:4px; font-size:12px;">❌ 재검토 요망</span>';
             btnHtml = `<button class="action-btn accent-btn" style="margin-top:15px; padding:10px 15px; font-size:14px;" onclick="window.editMyCampaign(${c.id})"><i class="fa-solid fa-pen"></i> 다시 작성하기</button>`;
-            if (c.teacherFeedback) {
-                feedbackHtml = `<div style="font-size:14px; background:#fef2f2; padding:12px; border-radius:8px; color:#991b1b; border:1px solid #fca5a5; margin-top:10px;"><strong>👨‍🏫 선생님 코멘트:</strong> ${window.textToHtml(c.teacherFeedback)}<br><span style="font-size:12px;">다시 제출해도 광고비는 한 번만 사용됩니다.</span></div>`;
-            }
         }
 
-        const cleanSlogan = (c.slogan || "").replace(/^["']+|["']+$/g, '');
+        // 심사 진행 단계 표시 (제안서와 동일한 흐름)
+        const step3Done = (c.status !== 'waiting');
+        const stepHtml = `<div style="display:flex; gap:6px; align-items:center; flex-wrap:wrap; font-size:12px; margin-bottom:12px;">
+            <span style="background:#dcfce7; color:#166534; padding:4px 10px; border-radius:20px; font-weight:bold;">✅ 제출 완료</span>
+            <span style="color:var(--text-muted);">→</span>
+            <span style="background:#dcfce7; color:#166534; padding:4px 10px; border-radius:20px; font-weight:bold;">✅ AI 1차 검토</span>
+            <span style="color:var(--text-muted);">→</span>
+            <span style="background:${step3Done ? (c.status === 'approved' ? '#dcfce7' : '#fee2e2') : '#fef3c7'}; color:${step3Done ? (c.status === 'approved' ? '#166534' : '#991b1b') : '#b45309'}; padding:4px 10px; border-radius:20px; font-weight:bold;">${step3Done ? (c.status === 'approved' ? '✅' : '❌') : '⏳'} 선생님 최종 심사</span>
+        </div>`;
+
+        const versions = window.getCampaignVersions(c);
+        const latestRound = versions[versions.length - 1].round;
+
+        let verTabs = '';
+        if (versions.length > 1) {
+            verTabs = `<div style="display:flex; gap:6px; margin-bottom:12px; flex-wrap:wrap; align-items:center;">
+                <span style="font-size:12px; color:var(--text-muted); font-weight:bold; margin-right:4px;">📚 내가 발전시킨 과정</span>`;
+            versions.forEach(v => {
+                const isLatest = v.round === latestRound;
+                verTabs += `<button class="mycver-tab-${c.id}" onclick="window.showMyCampaignVersion(${c.id}, ${v.round}, this)"
+                    style="padding:5px 12px; font-size:12px; font-weight:bold; border-radius:6px; cursor:pointer;
+                    border:1px solid ${isLatest ? 'var(--primary)' : 'var(--border-color)'};
+                    background:${isLatest ? 'var(--primary)' : '#ffffff'};
+                    color:${isLatest ? '#ffffff' : 'var(--text-muted)'};">${v.round}차${isLatest ? ' (최신)' : ''}</button>`;
+            });
+            verTabs += `</div>`;
+        }
+
+        let verPanels = '';
+        versions.forEach(v => {
+            const isLatest = v.round === latestRound;
+            const reviewed = (v.status === 'approved' || v.status === 'rejected');
+            const cleanSlogan = (v.slogan || "").replace(/^["']+|["']+$/g, '');
+
+            // 심사가 끝나야 AI 의견과 성과가 공개된다
+            let vFeedback = '';
+            if (!reviewed) {
+                vFeedback = `<div style="font-size:13px; color:#b45309; background:#fef3c7; padding:12px; border-radius:8px; border:1px solid #fde68a; margin-top:10px; text-align:center;">
+                    <strong>⏳ AI 담당관의 1차 검토가 끝났습니다.</strong><br>
+                    선생님의 최종 심사가 끝나면 AI 의견과 홍보 효과를 함께 확인할 수 있어요.
+                </div>`;
+            } else {
+                if (v.aiFeedback) {
+                    vFeedback += `<div style="font-size:13px; background:rgba(2, 132, 199, 0.05); padding:12px; border-radius:8px; border:1px solid rgba(2, 132, 199, 0.2); margin-top:10px;"><strong>🤖 AI 1차 의견:</strong> ${window.textToHtml(v.aiFeedback)}</div>`;
+                }
+                if (v.status === 'approved') {
+                    vFeedback += `<div style="font-size:13px; background:rgba(22, 163, 74, 0.1); padding:12px; border-radius:8px; border:1px solid rgba(22, 163, 74, 0.35); color:#166534; margin-top:10px;">
+                        <strong>🎉 홍보 효과:</strong> 방문객 +${v.expectedVisitor || 0}명 · 평판 +${v.expectedReputation || 0}점
+                        ${v.teacherFeedback ? `<br><strong>👨‍🏫 선생님 코멘트:</strong> ${window.textToHtml(v.teacherFeedback)}` : ''}
+                    </div>`;
+                } else if (v.teacherFeedback) {
+                    vFeedback += `<div style="font-size:14px; background:#fef2f2; padding:12px; border-radius:8px; color:#991b1b; border:1px solid #fca5a5; margin-top:10px;"><strong>👨‍🏫 선생님 코멘트:</strong> ${window.textToHtml(v.teacherFeedback)}<br><span style="font-size:12px;">다시 제출해도 광고비는 한 번만 사용됩니다.</span></div>`;
+                }
+            }
+
+            verPanels += `
+            <div id="mycver-panel-${c.id}-${v.round}" class="mycver-panel-${c.id}" style="display:${isLatest ? 'block' : 'none'};">
+                ${versions.length > 1 ? `<div style="font-size:12px; color:var(--text-muted); margin-bottom:8px;">${v.round}차 제출 ${v.submittedAt ? '(' + v.submittedAt + ')' : ''}</div>` : ''}
+                <div style="font-size:13px; color:var(--text-muted); background:#f8fafc; padding:10px; border-radius:8px; border:1px solid var(--border-color); margin-bottom:8px;">
+                    <div style="margin-bottom:3px;"><strong style="color:var(--primary);">🎯 홍보물:</strong> ${window.escapeHtml(v.topic || "미지정")}</div>
+                    <div><strong style="color:var(--primary);">👥 홍보 대상:</strong> ${window.escapeHtml(v.target || "미지정")}</div>
+                </div>
+                <div style="font-weight:bold; margin-bottom:8px;">"${window.escapeHtml(cleanSlogan)}"</div>
+                <div style="font-size:14px; color:var(--text-main); line-height:1.6; background:#f8fafc; padding:15px; border-radius:8px; border:1px solid #e2e8f0;">${window.textToHtml(v.content)}</div>
+                ${vFeedback}
+            </div>`;
+        });
 
         html += `<div style="background:#ffffff; border:1px solid var(--border-color); padding:20px; border-radius:12px; box-shadow:0 2px 4px rgba(0,0,0,0.02);">
-            <div style="display:flex; justify-content:space-between; margin-bottom:15px; align-items:center; gap:8px;">
+            <div style="display:flex; justify-content:space-between; margin-bottom:12px; align-items:center; gap:8px;">
                 <strong style="color:var(--primary); font-size:16px;">매체: ${window.escapeHtml(c.media)} (${c.cost}G)</strong>
                 <div>${statusHtml}</div>
             </div>
-            <div style="font-weight:bold; margin-bottom:5px;">"${window.escapeHtml(cleanSlogan)}"</div>
-            <div style="font-size:14px; color:var(--text-main); line-height:1.6; background:#f8fafc; padding:15px; border-radius:8px; border:1px solid #e2e8f0;">${window.textToHtml(c.content)}</div>
-            ${feedbackHtml}
+            ${stepHtml}
+            ${verTabs}
+            ${verPanels}
             ${btnHtml}
         </div>`;
     });
@@ -389,10 +490,16 @@ window.editMyCampaign = function(id) {
     if (!c) return;
 
     window.currentEditingCampaignId = id;
+    window.promoPlanConfirmed = true;   // 이미 세운 계획을 이어서 고치는 것이므로 통과
     const cleanSlogan = (c.slogan || "").replace(/^["']+|["']+$/g, '');
 
-    document.getElementById('displayStrategyTopic').innerText = c.topic;
-    document.getElementById('displayStrategyTarget').innerText = c.target;
+    // 1번 탭 입력칸까지 함께 채워야 다시 제출할 때 내용이 유지된다
+    document.getElementById('promoTopic').value = c.topic || '';
+    document.getElementById('promoTarget').value = c.target || '';
+    document.getElementById('promoSlogan').value = cleanSlogan;
+
+    document.getElementById('displayStrategyTopic').innerText = c.topic || '-';
+    document.getElementById('displayStrategyTarget').innerText = c.target || '-';
     document.getElementById('displayStrategySlogan').innerText = `"${cleanSlogan}"`;
     document.getElementById('promoContentInput').value = c.content || '';
 
@@ -400,13 +507,29 @@ window.editMyCampaign = function(id) {
     window.showNotification("기존 내용을 불러왔습니다. 선생님 코멘트를 참고해 보완한 뒤 다시 제출해주세요.");
 }
 
-window.executeCampaign = async function() {
-    const topic = document.getElementById('displayStrategyTopic').innerText;
-    const target = document.getElementById('displayStrategyTarget').innerText;
-    const slogan = document.getElementById('displayStrategySlogan').innerText.replace(/^["']+|["']+$/g, '');
-    const content = document.getElementById('promoContentInput').value.trim();
+window.isCampaignSubmitting = false;
 
-    if (!content) return window.showNotification("상세 기획안 및 홍보 문구를 작성해주세요.");
+// ==========================================
+// 2단계: 마케팅 전략 제출 (AI 1차 검토 → 선생님 최종 심사)
+// ==========================================
+window.executeCampaign = async function() {
+    if (window.isCampaignSubmitting || window.isAILoading) return;
+
+    // ① 1번 탭('홍보 계획 세우기')을 거쳤는지 확인한다
+    const topic = document.getElementById('promoTopic').value.trim();
+    const target = document.getElementById('promoTarget').value.trim();
+    const slogan = document.getElementById('promoSlogan').value.trim().replace(/^["\']+|["\']+$/g, '');
+
+    if (!window.promoPlanConfirmed || !topic || !target || !slogan) {
+        window.showNotification("먼저 '1. 홍보 계획 세우기'에서 홍보물과 홍보 대상을 정하고 [홍보 방법 정하러 가기]를 눌러주세요!");
+        const firstTab = document.querySelectorAll('#stage2-1 .sub-tab-btn')[0];
+        if (firstTab) window.switchInnerTab('inner-promo-strategy', firstTab);
+        return;
+    }
+
+    // ② 기획안과 매체 확인
+    const content = document.getElementById('promoContentInput').value.trim();
+    if (content.length < 20) return window.showNotification("상세 기획안 및 홍보 문구를 조금 더 자세히 작성해주세요.");
 
     let mediaName = "";
     let cost = 0;
@@ -422,86 +545,175 @@ window.executeCampaign = async function() {
         cost = parseInt(radio.value, 10);
     }
 
-    // 다시 제출하는 경우, 이전에 낸 광고비는 돌려주고 새 금액만 차감한다
+    // ③ 예산 확인 (다시 제출하는 경우 이전 광고비는 돌려준다)
     let refund = 0;
     if (window.currentEditingCampaignId) {
         const existing = window.gameState.marketingCampaigns.find(x => x.id === window.currentEditingCampaignId);
         if (existing) refund = existing.cost || 0;
     }
-
     if (window.gameState.budget + refund < cost) {
-        return window.showNotification(`예산이 부족합니다! (사용 가능 예산: ${window.gameState.budget + refund}G / 필요 예산: ${cost}G)\n지도에 기호를 추가로 등록하거나, 제안서를 승인받아 예산을 모아보세요.`);
+        return window.showNotification(`예산이 부족합니다! (사용 가능 예산: ${window.gameState.budget + refund}G / 필요 예산: ${cost}G)`);
     }
 
-    let imageUrl = null;
-    const photoFile = document.getElementById('promoImageInput').files[0];
-    if (photoFile) {
-        try {
-            const imagePart = await (window.safeGetBase64 ? window.safeGetBase64(photoFile) : window.getBase64(photoFile));
-            imageUrl = imagePart.dataUrl;
-        } catch (e) {
-            console.error("이미지 업로드 실패", e);
-            window.showNotification("포스터 이미지를 읽지 못해 글만 제출합니다.");
+    window.isCampaignSubmitting = true;
+    const submitBtn = document.getElementById('btn-campaign');
+    const originalBtnHtml = submitBtn ? submitBtn.innerHTML : '';
+    if (submitBtn) {
+        submitBtn.disabled = true;
+        submitBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> AI 담당관이 검토하는 중입니다...';
+    }
+    window.showAILoading();
+
+    try {
+        // ④ AI 1차 검토 (예상 성과 산정 + 의견)
+        if (window.getUsableApiKeys && window.getUsableApiKeys().length === 0) {
+            const ready = window.ensureApiKeysReady ? await window.ensureApiKeysReady() : false;
+            if (!ready) {
+                window.showNotification("AI 담당관과 아직 연결되지 않았습니다. 잠시 후 다시 제출해주세요.");
+                return;
+            }
+        }
+
+        const visMin = Math.max(10, Math.floor(cost * 0.5));
+        const visMax = Math.max(visMin + 10, Math.floor(cost * 2));
+        const repMin = Math.max(1, Math.floor(cost / 40));
+        const repMax = Math.max(repMin + 1, Math.floor(cost / 10));
+
+        const prompt = `너는 초등학교 4학년 학생의 지역 홍보 기획을 1차로 검토하는 따뜻한 AI 홍보 담당관이야.
+최종 심사는 선생님이 하시고, 너는 선생님께 전달할 1차 의견과 예상 성과를 쓰는 역할이야.
+
+홍보할 거리(홍보물): ${topic}
+홍보 대상(누구에게): ${target}
+핵심 슬로건: ${slogan}
+선택한 광고 매체: ${mediaName} (${cost}G)
+상세 기획안: ${content}
+
+검토 기준: 1) 홍보 대상에게 잘 닿는 매체와 내용인가
+          2) 슬로건과 기획안이 홍보물의 매력을 잘 드러내는가
+          3) 초등학생이 실제로 해볼 수 있는 기획인가
+
+첫 번째 줄에는 다른 말 없이 "방문객수,평판점수" 형식으로 숫자 두 개만 적어줘. (예: 250,12)
+방문객수는 ${visMin}부터 ${visMax} 사이, 평판점수는 ${repMin}부터 ${repMax} 사이의 정수여야 해.
+기획이 대상과 잘 맞고 구체적일수록 높은 숫자를, 막연하거나 짧으면 낮은 숫자를 줘.
+두 번째 줄부터는 학생에게 전할 의견을 써줘. 칭찬을 먼저 하고, 더 좋아질 점을 한 가지 덧붙여줘.
+초등학교 4학년이 읽을 수 있는 쉬운 말로 3문장 이내로 써줘.`;
+
+        const resText = await window.callGeminiAPI(prompt);
+
+        const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+        const lines = resText.split('\n');
+        let expectedVis = Math.floor(cost * 1.0);
+        let expectedRep = Math.floor(cost / 20);
+        let aiFeedback = resText.trim();
+
+        const numMatch = String(lines[0]).match(/(\d+)\D+(\d+)/);
+        if (numMatch) {
+            expectedVis = clamp(parseInt(numMatch[1], 10), visMin, visMax);
+            expectedRep = clamp(parseInt(numMatch[2], 10), repMin, repMax);
+            const rest = lines.slice(1).join('\n').trim();
+            if (rest) aiFeedback = rest;
+        }
+
+        // ⑤ 저장
+        const today = window.getTodayStr();
+        let imageUrl = null;
+        const photoFile = document.getElementById('promoImageInput').files[0];
+        if (photoFile) {
+            try {
+                const imagePart = await (window.safeGetBase64 ? window.safeGetBase64(photoFile) : window.getBase64(photoFile));
+                imageUrl = imagePart.dataUrl;
+            } catch (e) {
+                console.error("이미지 업로드 실패", e);
+                window.showNotification("포스터 이미지를 읽지 못해 글만 제출합니다.");
+            }
+        }
+
+        window.gameState.budget = window.gameState.budget + refund - cost;
+
+        const newVersion = {
+            round: 1,
+            topic: topic, target: target, slogan: slogan,
+            media: mediaName, cost: cost, content: content,
+            aiFeedback: aiFeedback,
+            expectedVisitor: expectedVis, expectedReputation: expectedRep,
+            teacherFeedback: '', status: 'waiting', submittedAt: today
+        };
+
+        if (window.currentEditingCampaignId) {
+            const index = window.gameState.marketingCampaigns.findIndex(x => x.id === window.currentEditingCampaignId);
+            if (index !== -1) {
+                const c = window.gameState.marketingCampaigns.splice(index, 1)[0];
+
+                if (!Array.isArray(c.versions) || c.versions.length === 0) {
+                    c.versions = window.getCampaignVersions(c);
+                }
+                newVersion.round = c.versions[c.versions.length - 1].round + 1;
+                c.versions.push(newVersion);
+                while (c.versions.length > window.MAX_CAMPAIGN_VERSIONS) c.versions.shift();
+
+                c.topic = topic; c.target = target; c.slogan = slogan;
+                if (imageUrl) c.imageUrl = imageUrl;
+                c.media = mediaName; c.cost = cost; c.content = content;
+                c.aiFeedback = aiFeedback;
+                c.expectedVisitor = expectedVis;
+                c.expectedReputation = expectedRep;
+                c.teacherFeedback = '';
+                c.status = 'waiting';
+                c.round = newVersion.round;
+                c.submittedAt = today;
+                c.rewardPaid = c.rewardPaid || false;
+
+                window.gameState.marketingCampaigns.unshift(c);
+                window.showNotification(`${newVersion.round}차 홍보 전략을 제출했습니다! 선생님의 심사를 기다려주세요.`);
+            }
+            window.currentEditingCampaignId = null;
+        } else {
+            window.gameState.marketingCampaigns.unshift({
+                id: Date.now(),
+                author: `${document.getElementById('numInput').value}번 시장님`,
+                authorKey: window.userKey,
+                topic: topic, target: target, slogan: slogan,
+                imageUrl: imageUrl,
+                media: mediaName, cost: cost, content: content,
+                aiFeedback: aiFeedback,
+                expectedVisitor: expectedVis, expectedReputation: expectedRep,
+                teacherFeedback: '',
+                status: 'waiting',
+                round: 1,
+                submittedAt: today,
+                rewardPaid: false,
+                likes: 0, likedBy: [],
+                versions: [newVersion]
+            });
+            window.showNotification("홍보 전략을 제출했습니다! AI 담당관의 1차 검토를 거쳐 선생님께 전달되었어요.");
+        }
+
+        window.saveGameState();
+        window.updateUI(true);
+        window.renderSharedMarketingBoard();
+
+        document.getElementById('campaignResultArea').style.display = 'block';
+        document.getElementById('campaignFeedback').innerHTML = `
+            <div style="font-size:18px; margin-bottom:10px;"><strong>🤝 기획안을 제출했습니다!</strong></div>
+            "${window.escapeHtml(mediaName)}" 매체를 활용한 전략이 접수되었습니다.<br>
+            🤖 <strong>AI 담당관</strong>의 1차 검토를 마치고 👨‍🏫 <strong>선생님</strong>께 전달되었어요. 승인을 기다려주세요!
+        `;
+
+        const myTab = document.querySelectorAll('#stage2-1 .sub-tab-btn')[2];
+        if (myTab) window.switchInnerTab('inner-my-campaign', myTab);
+        window.renderMyCampaigns();
+
+    } catch (e) {
+        console.error("홍보 전략 제출 오류:", e);
+        window.showNotification(e.userMessage || "제출 중 문제가 생겼습니다. 잠시 후 다시 시도해주세요.");
+    } finally {
+        window.isCampaignSubmitting = false;
+        window.hideAILoading();
+        if (submitBtn) {
+            submitBtn.disabled = false;
+            submitBtn.innerHTML = originalBtnHtml;
         }
     }
-
-    window.gameState.budget = window.gameState.budget + refund - cost;
-
-    const expectedVis = Math.floor(cost * (Math.random() * 0.5 + 0.8));
-    const expectedRep = Math.floor((cost / 20) * (Math.random() * 0.5 + 0.8));
-
-    if (window.currentEditingCampaignId) {
-        const index = window.gameState.marketingCampaigns.findIndex(x => x.id === window.currentEditingCampaignId);
-        if (index !== -1) {
-            const c = window.gameState.marketingCampaigns.splice(index, 1)[0];
-            c.topic = topic;
-            c.target = target;
-            c.slogan = slogan;
-            if (imageUrl) c.imageUrl = imageUrl;
-            c.media = mediaName;
-            c.cost = cost;
-            c.content = content;
-            c.expectedVisitor = expectedVis;
-            c.expectedReputation = expectedRep;
-            c.status = 'waiting';
-            c.teacherFeedback = '';
-            c.rewardPaid = c.rewardPaid || false;
-            window.gameState.marketingCampaigns.unshift(c);
-        }
-        window.currentEditingCampaignId = null;
-    } else {
-        window.gameState.marketingCampaigns.unshift({
-            id: Date.now(),
-            author: `${document.getElementById('numInput').value}번 시장님`,
-            authorKey: window.userKey,
-            topic: topic,
-            target: target,
-            slogan: slogan,
-            imageUrl: imageUrl,
-            media: mediaName,
-            cost: cost,
-            content: content,
-            expectedVisitor: expectedVis,
-            expectedReputation: expectedRep,
-            status: 'waiting',
-            rewardPaid: false,
-            likes: 0,
-            likedBy: []
-        });
-    }
-
-    window.updateUI();
-    window.renderSharedMarketingBoard();
-    window.renderMyCampaigns();
-
-    document.getElementById('campaignResultArea').style.display = 'block';
-    document.getElementById('campaignFeedback').innerHTML = `
-        <div style="font-size:18px; margin-bottom:10px;"><strong>🤝 기획안을 제출했습니다!</strong></div>
-        "${window.escapeHtml(mediaName)}" 매체를 활용한 전략이 성공적으로 접수되었습니다.<br>
-        👨‍🏫 <strong>선생님</strong>이 최종 성과를 산정하고 계십니다. 승인을 기다려주세요!
-    `;
-
-    window.showNotification("홍보 방법이 성공적으로 제출되었습니다!");
 }
 
 window.renderSharedMarketingBoard = function() {
@@ -533,6 +745,13 @@ window.renderSharedMarketingBoard = function() {
             <strong>🎉 홍보 효과:</strong> 방문객 <span style="color:#d97706">+${c.expectedVisitor || 0}명</span> | 평판 <span style="color:#ef4444">+${c.expectedReputation || 0}점</span>
         </div>`;
 
+        const aiHtml = c.aiFeedback
+            ? `<div style="font-size:13px; background:rgba(2, 132, 199, 0.05); padding:10px; border-radius:8px; border:1px solid rgba(2, 132, 199, 0.2); margin-top:10px;"><strong>🤖 AI 1차 의견:</strong> ${window.textToHtml(c.aiFeedback)}</div>`
+            : '';
+        const teacherHtml = c.teacherFeedback
+            ? `<div style="font-size:13px; background:rgba(22, 163, 74, 0.1); padding:10px; border-radius:8px; border:1px solid rgba(22, 163, 74, 0.3); margin-top:10px;"><strong>👨‍🏫 선생님 코멘트:</strong> ${window.textToHtml(c.teacherFeedback)}</div>`
+            : '';
+
         const deleteBtnHtml = window.isTeacherMode ? `<button class="delete-btn" onclick="event.stopPropagation(); window.deleteItem('campaign', ${c.id})"><i class="fa-solid fa-trash"></i></button>` : '';
 
         board.innerHTML += `
@@ -544,13 +763,15 @@ window.renderSharedMarketingBoard = function() {
             </div>
             ${imageHtml}
             <div style="font-size: 13px; color: var(--text-muted); background: #f8fafc; padding: 10px; border-radius: 8px; border: 1px solid var(--border-color); margin-bottom: 5px;">
-                <div style="margin-bottom: 3px;"><strong style="color:var(--primary);">🎯 홍보 대상:</strong> ${window.escapeHtml(c.topic || "미지정")}</div>
-                <div><strong style="color:var(--primary);">👥 타겟 설정:</strong> ${window.escapeHtml(c.target || "미지정")}</div>
+                <div style="margin-bottom: 3px;"><strong style="color:var(--primary);">🎯 홍보물:</strong> ${window.escapeHtml(c.topic || "미지정")}</div>
+                <div><strong style="color:var(--primary);">👥 홍보 대상:</strong> ${window.escapeHtml(c.target || "미지정")}</div>
             </div>
             <div style="font-size: 16px; font-weight: bold; color: var(--text-main); margin-bottom: 5px; margin-top: 5px;">"${window.escapeHtml(cleanSlogan)}"</div>
             <div style="font-size:14px; line-height:1.6; background:#ffffff; padding:12px; border-radius:8px; border:1px solid #e2e8f0; color:#1e293b;">${window.textToHtml(c.content)}</div>
             <div style="font-size:13px; color:var(--text-muted); margin-top: 5px;"><i class="fa-solid fa-bullhorn"></i> 사용 매체: ${window.escapeHtml(c.media || "미지정")} (${c.cost || 0}G)</div>
             ${metricsHtml}
+            ${aiHtml}
+            ${teacherHtml}
             <div style="margin-top:auto;">${likeBtn}</div>
         </div>`;
     });
