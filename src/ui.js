@@ -19,6 +19,63 @@ window.promoPlanConfirmed = false;
 window.MAX_CAMPAIGN_VERSIONS = 3;
 
 // ==========================================
+// 앱 디자인에 맞춘 확인창 / 알림창
+// (브라우저 기본 confirm/alert 대신 사용합니다)
+// ==========================================
+window.closeUiDialog = function() {
+    const el = document.getElementById('uiDialogOverlay');
+    if (el) el.remove();
+};
+
+window.uiConfirm = function(message, opts) {
+    const o = opts || {};
+    const title = o.title || '⚠️ 잠깐만요, 시장님!';
+    const okText = o.okText || '네, 진행할게요';
+    const cancelText = o.cancelText || '아니요';
+    const danger = o.danger === true;
+
+    return new Promise(resolve => {
+        window.closeUiDialog();
+        const overlay = document.createElement('div');
+        overlay.id = 'uiDialogOverlay';
+        overlay.style.cssText = 'position:fixed; inset:0; background:rgba(15,23,42,0.45); backdrop-filter:blur(3px); z-index:10000; display:flex; align-items:center; justify-content:center; padding:20px;';
+        overlay.innerHTML = `
+            <div style="background:#ffffff; border-radius:16px; padding:28px; max-width:460px; width:100%; box-shadow:0 20px 45px rgba(0,0,0,0.2); text-align:center;">
+                <div style="font-size:19px; font-weight:800; color:${danger ? '#ef4444' : 'var(--accent)'}; margin-bottom:14px;">${title}</div>
+                <div style="font-size:15px; line-height:1.7; color:var(--text-main); background:#f8fafc; padding:16px; border-radius:10px; border:1px solid var(--border-color); text-align:left; white-space:pre-line;">${window.escapeHtml(message)}</div>
+                <div style="display:flex; gap:10px; margin-top:20px;">
+                    <button id="uiDialogCancel" style="flex:1; padding:12px; border-radius:10px; border:1px solid var(--border-color); background:#f1f5f9; color:var(--text-main); font-weight:bold; font-size:15px; cursor:pointer;">${cancelText}</button>
+                    <button id="uiDialogOk" style="flex:1; padding:12px; border-radius:10px; border:none; background:${danger ? '#ef4444' : 'var(--accent)'}; color:#ffffff; font-weight:bold; font-size:15px; cursor:pointer;">${okText}</button>
+                </div>
+            </div>`;
+        document.body.appendChild(overlay);
+        const done = (v) => { window.closeUiDialog(); resolve(v); };
+        document.getElementById('uiDialogOk').onclick = () => done(true);
+        document.getElementById('uiDialogCancel').onclick = () => done(false);
+        overlay.onclick = (e) => { if (e.target === overlay) done(false); };
+    });
+};
+
+window.uiAlert = function(message, opts) {
+    const o = opts || {};
+    const title = o.title || '📢 알려드립니다';
+    return new Promise(resolve => {
+        window.closeUiDialog();
+        const overlay = document.createElement('div');
+        overlay.id = 'uiDialogOverlay';
+        overlay.style.cssText = 'position:fixed; inset:0; background:rgba(15,23,42,0.45); backdrop-filter:blur(3px); z-index:10000; display:flex; align-items:center; justify-content:center; padding:20px;';
+        overlay.innerHTML = `
+            <div style="background:#ffffff; border-radius:16px; padding:28px; max-width:460px; width:100%; box-shadow:0 20px 45px rgba(0,0,0,0.2); text-align:center;">
+                <div style="font-size:19px; font-weight:800; color:var(--primary); margin-bottom:14px;">${title}</div>
+                <div style="font-size:15px; line-height:1.7; color:var(--text-main); background:#f8fafc; padding:16px; border-radius:10px; border:1px solid var(--border-color); text-align:left; white-space:pre-line;">${window.escapeHtml(message)}</div>
+                <button id="uiDialogOk" style="width:100%; margin-top:20px; padding:12px; border-radius:10px; border:none; background:var(--primary); color:#ffffff; font-weight:bold; font-size:15px; cursor:pointer;">확인했어요</button>
+            </div>`;
+        document.body.appendChild(overlay);
+        document.getElementById('uiDialogOk').onclick = () => { window.closeUiDialog(); resolve(true); };
+    });
+};
+
+// ==========================================
 // 공통 도우미 (학생이 입력한 <, ' 등으로 화면이 깨지지 않도록 처리)
 // ==========================================
 window.escapeHtml = function(str) {
@@ -297,13 +354,17 @@ window.renderMyProposals = function() {
     list.innerHTML = html;
 }
 
-window.editMyProposal = function(id) {
+window.editMyProposal = async function(id) {
     const p = window.gameState.submittedProposals.find(x => x.id === id);
     if (!p) return;
 
     const versions = window.getProposalVersions(p);
     if (versions.length >= window.MAX_PROPOSAL_VERSIONS) {
-        if (!confirm(`이미 ${versions.length}차까지 작성했습니다.\n다시 제출하면 가장 오래된 1차 기록이 사라집니다. 계속할까요?`)) return;
+        const ok = await window.uiConfirm(
+            `시장님, 이미 ${versions.length}차까지 제안서를 작성하셨습니다.\n\n다시 제출하면 가장 오래된 1차 기록이 사라집니다.\n그래도 계속하시겠습니까?`,
+            { title: '⚠️ 기록이 사라질 수 있습니다', okText: '네, 다시 쓸게요', cancelText: '그대로 둘게요' }
+        );
+        if (!ok) return;
     }
 
     window.currentEditingProposalId = id;
@@ -485,9 +546,18 @@ window.renderMyCampaigns = function() {
     list.innerHTML = html;
 }
 
-window.editMyCampaign = function(id) {
+window.editMyCampaign = async function(id) {
     const c = window.gameState.marketingCampaigns.find(x => x.id === id);
     if (!c) return;
+
+    const cVers = window.getCampaignVersions(c);
+    if (cVers.length >= window.MAX_CAMPAIGN_VERSIONS) {
+        const ok = await window.uiConfirm(
+            `시장님, 이미 ${cVers.length}차까지 홍보 전략을 작성하셨습니다.\n\n다시 제출하면 가장 오래된 1차 기록이 사라집니다.\n그래도 계속하시겠습니까?`,
+            { title: '⚠️ 기록이 사라질 수 있습니다', okText: '네, 다시 쓸게요', cancelText: '그대로 둘게요' }
+        );
+        if (!ok) return;
+    }
 
     window.currentEditingCampaignId = id;
     window.promoPlanConfirmed = true;   // 이미 세운 계획을 이어서 고치는 것이므로 통과

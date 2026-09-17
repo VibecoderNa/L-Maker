@@ -75,7 +75,7 @@ window.generateClassCode = async function() {
 
     await setDoc(doc(db, "classes", code), {
         apiKeys: [],
-        apiModel: window.dynamicApiModel || "gemini-3.8-flash",
+        apiModel: window.dynamicApiModel || window.DEFAULT_AI_MODEL,
         problems: [],
         submittedProposals: [],
         promoBoard: [],
@@ -485,8 +485,10 @@ window.submitTeacherReview = async function(proposalId, isApproved, sNum) {
 
     const typed = feedbackEl.value.trim();
     if (!isApproved && typed.length < 5) {
+        await window.uiAlert("재검토를 요청할 때는 어떤 점을 고치면 좋을지 꼭 적어주세요.\n학생이 무엇을 보완해야 할지 알 수 있어야 합니다.",
+            { title: '✏️ 피드백을 적어주세요' });
         feedbackEl.focus();
-        return alert("재검토를 요청할 때는 어떤 점을 고치면 좋을지 꼭 적어주세요.\n학생이 무엇을 보완해야 할지 알 수 있어야 합니다.");
+        return;
     }
     const feedbackText = typed || '훌륭한 제안입니다! 우리 지역을 위해 꼭 필요한 아이디어네요.';
 
@@ -494,9 +496,13 @@ window.submitTeacherReview = async function(proposalId, isApproved, sNum) {
     if (isApproved) {
         const parsed = parseInt(budgetEl.value, 10);
         finalBudget = isNaN(parsed) ? 0 : Math.max(0, parsed);
-        if (!confirm(`이 제안서를 승인하고 학생에게 ${finalBudget}G를 지급하시겠습니까?`)) return;
+        const ok = await window.uiConfirm(`이 제안서를 승인하고 학생에게 ${finalBudget}G를 지급합니다.\n승인하면 AI 의견과 선생님 피드백이 학생에게 공개됩니다.`,
+            { title: '✅ 제안서를 승인할까요?', okText: '승인하기', cancelText: '조금 더 볼게요' });
+        if (!ok) return;
     } else {
-        if (!confirm("재검토(반려) 처리하시겠습니까? 학생이 내용을 수정해 다시 제출할 수 있습니다.")) return;
+        const ok = await window.uiConfirm("재검토(반려)로 처리합니다.\n학생이 선생님 코멘트를 보고 수정해 다시 제출할 수 있습니다.",
+            { title: '↩️ 재검토를 요청할까요?', okText: '재검토 요청', cancelText: '취소', danger: true });
+        if (!ok) return;
     }
 
     const newStatus = isApproved ? 'approved' : 'rejected';
@@ -552,8 +558,10 @@ window.submitCampaignReview = async function(campaignId, isApproved, sNum) {
 
     const typedC = feedbackEl.value.trim();
     if (!isApproved && typedC.length < 5) {
+        await window.uiAlert("재검토를 요청할 때는 어떤 점을 고치면 좋을지 꼭 적어주세요.\n학생이 무엇을 보완해야 할지 알 수 있어야 합니다.",
+            { title: '✏️ 피드백을 적어주세요' });
         feedbackEl.focus();
-        return alert("재검토를 요청할 때는 어떤 점을 고치면 좋을지 꼭 적어주세요.\n학생이 무엇을 보완해야 할지 알 수 있어야 합니다.");
+        return;
     }
     const feedbackText = typedC || '멋진 마케팅 전략입니다! 예산이 성공적으로 집행되었습니다.';
 
@@ -565,9 +573,13 @@ window.submitCampaignReview = async function(campaignId, isApproved, sNum) {
         const repEl = document.getElementById(`c-rep-${campaignId}`);
         if (visEl) finalVis = parseInt(visEl.value, 10) || 0;
         if (repEl) finalRep = parseInt(repEl.value, 10) || 0;
-        if (!confirm(`이 전략을 승인하고 방문객 ${finalVis}명, 평판 ${finalRep}점을 지급하시겠습니까?`)) return;
+        const ok = await window.uiConfirm(`이 홍보 전략을 승인하고 방문객 ${finalVis}명, 평판 ${finalRep}점을 지급합니다.`,
+            { title: '✅ 홍보 전략을 승인할까요?', okText: '승인하기', cancelText: '조금 더 볼게요' });
+        if (!ok) return;
     } else {
-        if (!confirm("재검토(반려) 처리하시겠습니까? 학생이 내용을 수정해 다시 제출할 수 있습니다.")) return;
+        const ok = await window.uiConfirm("재검토(반려)로 처리합니다.\n학생이 선생님 코멘트를 보고 보완해 다시 제출할 수 있습니다.",
+            { title: '↩️ 재검토를 요청할까요?', okText: '재검토 요청', cancelText: '취소', danger: true });
+        if (!ok) return;
     }
 
     targetCampaign.status = isApproved ? 'approved' : 'rejected';
@@ -614,8 +626,10 @@ window.submitCampaignReview = async function(campaignId, isApproved, sNum) {
 // 게시물 삭제 (관리자 권한)
 // ==========================================
 // 고유 id로 먼저 찾고, 없으면 예전 방식(배열 위치)으로 처리
-window.deleteItem = function(type, indexOrId) {
-    if (!confirm("⚠️ 해당 게시물을 완전히 삭제하시겠습니까?")) return;
+window.deleteItem = async function(type, indexOrId) {
+    const ok = await window.uiConfirm("해당 게시물을 완전히 삭제합니다.\n삭제한 내용은 되돌릴 수 없습니다.",
+        { title: '🗑️ 게시물을 삭제할까요?', okText: '삭제하기', cancelText: '취소', danger: true });
+    if (!ok) return;
 
     if (type === 'problem') {
         const byId = window.gameState.problems.findIndex(p => p.id === indexOrId);

@@ -29,6 +29,48 @@ window.aiLoadingTips = [
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
 // ==========================================
+// 기다리는 동안 학습 팁을 5초마다 바꿔 보여준다
+// ==========================================
+window.tipTimers = {};
+
+window.startTipRotation = function(elementId, intervalMs = 10000) {
+    window.stopTipRotation(elementId);
+    const first = document.getElementById(elementId);
+    if (!first) return;
+    let idx = Math.floor(Math.random() * window.aiLoadingTips.length);
+    first.innerText = window.aiLoadingTips[idx];
+    window.tipTimers[elementId] = setInterval(() => {
+        const el = document.getElementById(elementId);
+        if (!el) { window.stopTipRotation(elementId); return; }
+        idx = (idx + 1) % window.aiLoadingTips.length;
+        el.style.transition = 'opacity 0.25s';
+        el.style.opacity = '0';
+        setTimeout(() => {
+            const el2 = document.getElementById(elementId);
+            if (el2) { el2.innerText = window.aiLoadingTips[idx]; el2.style.opacity = '1'; }
+        }, 250);
+    }, intervalMs);
+};
+
+window.stopTipRotation = function(elementId) {
+    if (window.tipTimers[elementId]) {
+        clearInterval(window.tipTimers[elementId]);
+        delete window.tipTimers[elementId];
+    }
+};
+
+// 기다리는 동안 보여줄 인라인 안내 상자
+window.buildWaitingBox = function(title, tipElementId) {
+    return `<div style="display:flex; align-items:center; gap:8px; font-weight:bold; color:var(--primary);">
+        <i class="fa-solid fa-spinner fa-spin"></i> ${title}
+    </div>
+    <div style="margin-top:12px; padding:12px 14px; background:#ffffff; border-radius:8px; border:1px dashed var(--border-color);">
+        <div style="font-size:12px; font-weight:bold; color:var(--primary); margin-bottom:6px;">💡 기다리는 동안 알아두면 좋아요</div>
+        <div id="${tipElementId}" style="font-size:14px; line-height:1.6; color:var(--text-main);"></div>
+    </div>`;
+};
+
+// ==========================================
 // 공통: Gemini API 호출
 // ==========================================
 window.getUsableApiKeys = function() {
@@ -62,10 +104,25 @@ window.callGeminiAPI = async function(prompt, inlineData = null) {
         throw e;
     }
 
-    const model = window.dynamicApiModel || "gemini-3.8-flash";
+    // 교사용 설정에 저장된 모델이 항상 우선입니다. 아래 값은 설정이 없을 때만 쓰는 예비값입니다.
+    const model = window.dynamicApiModel || window.DEFAULT_AI_MODEL || "gemini-3.8-flash";
     const parts = [{ text: prompt }];
     if (inlineData) parts.push({ inlineData: inlineData });
-    const body = { contents: [{ parts: parts }], generationConfig: { temperature: 0.7 } };
+
+    // Gemini 3 계열은 '사고 수준'을 낮추면 훨씬 빠르고 토큰도 적게 씁니다.
+    // (초등 수업용 짧은 답변에는 깊은 추론이 필요 없습니다)
+    // 혹시 모델이 이 항목을 지원하지 않으면 아래 400 처리에서 자동으로 빼고 다시 시도합니다.
+    const buildBody = (useThinking) => {
+        const gc = {};
+        if (useThinking && /^gemini-3/.test(model)) {
+            gc.thinkingConfig = { thinkingLevel: "LOW" };
+        } else {
+            gc.temperature = 0.7;
+        }
+        return { contents: [{ parts: parts }], generationConfig: gc };
+    };
+    if (window.geminiUseThinkingConfig === undefined) window.geminiUseThinkingConfig = true;
+    let body = buildBody(window.geminiUseThinkingConfig);
 
     let lastError = null;
 
@@ -125,7 +182,17 @@ window.callGeminiAPI = async function(prompt, inlineData = null) {
                     break; // 다음 키
                 }
 
-                // 400 / 403 등 → 키 자체가 잘못됨. 이번 접속 동안 이 키는 제외
+                // 400인데 설정(generationConfig) 문제라면, 키 문제가 아니라 요청 형식 문제다.
+                // 사고 수준 설정을 빼고 한 번 더 시도한다.
+                if (response.status === 400 && window.geminiUseThinkingConfig &&
+                    /thinking|generation_?config|generationConfig|Unknown name/i.test(detail)) {
+                    console.warn("[AI] 이 모델은 사고 수준 설정을 지원하지 않습니다. 설정을 빼고 다시 시도합니다.");
+                    window.geminiUseThinkingConfig = false;
+                    body = buildBody(false);
+                    continue;
+                }
+
+                // 그 외 400 / 403 등 → 키 자체가 잘못됨. 이번 접속 동안 이 키는 제외
                 window.apiKeyDisabled[key] = true;
                 console.error(`[AI] ${i + 1}번 키를 사용할 수 없습니다(${response.status}). 목록에서 제외합니다.`, detail);
                 lastError = new Error(`INVALID_KEY_${response.status}`);
@@ -155,15 +222,35 @@ window.safeGetBase64 = async function(file) {
 }
 
 // 전체 화면 로딩창 제어 (제출 전용)
+window.aiLoadingStatusTimer = null;
+
 window.showAILoading = function() {
     const overlay = document.getElementById('aiLoadingOverlay');
-    const tipText = document.getElementById('aiLoadingTipText');
-    if (tipText) tipText.innerText = window.aiLoadingTips[Math.floor(Math.random() * window.aiLoadingTips.length)];
     if (overlay) overlay.classList.add('active');
+    window.startTipRotation('aiLoadingTipText', 10000);
+
+    // 오래 걸리면 상황을 알려준다 (구글 서버가 붐빌 때가 많습니다)
+    const status = document.getElementById('aiLoadingStatus');
+    if (status) status.innerText = '';
+    const startedAt = Date.now();
+    if (window.aiLoadingStatusTimer) clearInterval(window.aiLoadingStatusTimer);
+    window.aiLoadingStatusTimer = setInterval(() => {
+        const el = document.getElementById('aiLoadingStatus');
+        if (!el) return;
+        const sec = Math.floor((Date.now() - startedAt) / 1000);
+        // 평소에는 조용히 두고, 30초를 넘겨 오래 걸릴 때만 상황을 알려준다
+        if (sec >= 60) el.innerText = `${sec}초째 기다리는 중… AI 담당관에게 요청이 아주 많이 몰렸어요. 조금만 더 기다려주세요.`;
+        else if (sec >= 30) el.innerText = `${sec}초째 기다리는 중… 차례를 기다리고 있어요.`;
+    }, 1000);
 }
+
 window.hideAILoading = function() {
     const overlay = document.getElementById('aiLoadingOverlay');
     if (overlay) overlay.classList.remove('active');
+    window.stopTipRotation('aiLoadingTipText');
+    if (window.aiLoadingStatusTimer) { clearInterval(window.aiLoadingStatusTimer); window.aiLoadingStatusTimer = null; }
+    const status = document.getElementById('aiLoadingStatus');
+    if (status) status.innerText = '';
 }
 
 // ==========================================
@@ -187,7 +274,8 @@ window.getAIAdvice = async function() {
 
     const adviceArea = document.getElementById('aiAdviceArea');
     adviceArea.style.display = 'block';
-    adviceArea.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> AI 비서가 자료를 살펴보고 있습니다...';
+    adviceArea.innerHTML = window.buildWaitingBox('AI 비서가 자료를 살펴보고 있습니다...', 'adviceTipText');
+    window.startTipRotation('adviceTipText', 10000);
 
     try {
         let inlineData = null;
@@ -218,6 +306,7 @@ ${photoFile ? "학생이 직접 찍은 현장 사진이 함께 첨부되어 있�
         const msg = e.userMessage || "잠시 후 다시 시도해주세요.";
         adviceArea.innerHTML = `<span style="color:#ef4444;">${msg}</span>`;
     } finally {
+        window.stopTipRotation('adviceTipText');
         window.isAILoading = false;
     }
 }
@@ -456,7 +545,8 @@ window.getAIConsulting = async function() {
     const resArea = document.getElementById('consultingResult');
     const resText = document.getElementById('consultingText');
     resArea.style.display = 'block';
-    resText.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> AI 담당관이 기획안을 살펴보고 있습니다...';
+    resText.innerHTML = window.buildWaitingBox('AI 담당관이 기획안을 살펴보고 있습니다...', 'consultingTipText');
+    window.startTipRotation('consultingTipText', 10000);
 
     try {
         const prompt = `너는 초등학교 4학년 학생의 지역 홍보 기획을 돕는 친절한 마케팅 전문가 AI야.
@@ -477,6 +567,7 @@ window.getAIConsulting = async function() {
         const msg = e.userMessage || "잠시 후 다시 시도해주세요.";
         resText.innerHTML = `<span style="color:#ef4444;">${msg}</span>`;
     } finally {
+        window.stopTipRotation('consultingTipText');
         window.isAILoading = false;
     }
 }

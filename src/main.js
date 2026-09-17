@@ -44,11 +44,44 @@ window.eduOffices = {
 // 심사용 계정(_0000)이 AI 키를 가져올 마스터 학급. 학급을 옮기실 때 이 값만 바꾸면 됩니다.
 window.MASTER_CLASS_KEY = "gyeongbuk_6007";
 
-window.isTeacherMode = false; window.dynamicApiKey = ""; window.dynamicApiKeys = []; window.dynamicApiModel = "gemini-3.8-flash"; window.classKey = ''; window.userKey = ''; window.currentUserId = ''; 
+// 심사용 계정(_0000)이 쓸 AI 키를 보관하는 전용 문서.
+// 선생님 학급과 분리되어 있어, 학급을 옮기거나 지워도 심사용 AI는 계속 작동합니다.
+window.JUDGE_KEY_DOC = "_judge_master";
+
+// AI 모델 기본값. 교사용 설정에 저장된 값이 있으면 '항상 그 값이 우선'합니다.
+// 이 값은 설정이 하나도 없을 때만 쓰이는 예비값입니다.
+window.DEFAULT_AI_MODEL = "gemini-3.8-flash";
+
+window.isTeacherMode = false; window.dynamicApiKey = ""; window.dynamicApiKeys = []; window.dynamicApiModel = ""; window.classKey = ''; window.userKey = ''; window.currentUserId = ''; 
 window.gameState = { budget: 500, visitorCount: 0, reputation: 0, satisfaction: 0, submittedProposals: [], problems: [], promoBoard: [], marketingCampaigns: [], builtBuildings: [], mapMarkers: [], mapCenter: null, aiUsage: { date: '', advice: 0, consulting: 0 } };
 window.currentSelectedProblem = null; window.currentSelectedPromo = null;
 window.allStudentsData = {}; window.classDataLoaded = false; window.studentDataLoaded = false;
 window.initialMapCenterSet = false;
+
+// 이 브라우저를 구분하는 값 (번호 중복 접속을 막는 데 씁니다)
+window.getDeviceId = function() {
+    let id = window.safeGetItem('lm_device_id');
+    if (!id) {
+        id = 'd_' + Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
+        window.safeSetItem('lm_device_id', id);
+    }
+    return id;
+};
+
+// 접속 중임을 주기적으로 알린다 (2분마다)
+// 브라우저가 갑자기 꺼져도 5분이 지나면 번호가 자동으로 풀립니다.
+window.heartbeatTimer = null;
+window.startHeartbeat = function() {
+    if (window.heartbeatTimer) clearInterval(window.heartbeatTimer);
+    const beat = () => {
+        if (window.isTeacherMode || !window.classKey || !window.userKey) return;
+        setDoc(doc(db, "classes", window.classKey, "students", window.userKey),
+            { isOnline: true, lastSeen: Date.now(), deviceId: window.getDeviceId() }, { merge: true })
+            .catch(() => {});
+    };
+    beat();
+    window.heartbeatTimer = setInterval(beat, 120000);
+};
 
 window.getTodayStr = function() { const d = new Date(); const offset = d.getTimezoneOffset() * 60000; const kstTime = new Date(d.getTime() - offset + (9 * 60 * 60000)); return kstTime.toISOString().split('T')[0]; }
 window.safeGetItem = function(key) { try { return localStorage.getItem(key); } catch(e) { return null; } }
@@ -75,9 +108,11 @@ window.toggleLogoutMenu = function(e) { const menu = document.getElementById('lo
 
 window.executeLogout = async function(e) {
     if(e) e.stopPropagation();
-    if(!confirm("시스템을 종료하고 안전하게 로그아웃 하시겠습니까?")) return;
+    const ok = await window.uiConfirm("시스템을 종료하고 로그아웃합니다.\n작성 중인 내용이 있다면 먼저 제출해주세요.",
+        { title: '👋 로그아웃할까요?', okText: '로그아웃', cancelText: '더 할래요' });
+    if (!ok) return;
     if(!window.isTeacherMode && window.classKey && window.userKey) {
-        try { document.body.style.opacity = '0.5'; await setDoc(doc(db, "classes", window.classKey, "students", window.userKey), { isOnline: false }, { merge: true }); } catch(err) { console.error("로그아웃 오류:", err); }
+        try { document.body.style.opacity = '0.5'; if (window.heartbeatTimer) clearInterval(window.heartbeatTimer); await setDoc(doc(db, "classes", window.classKey, "students", window.userKey), { isOnline: false, lastSeen: 0 }, { merge: true }); } catch(err) { console.error("로그아웃 오류:", err); }
     }
     location.reload(); 
 };
@@ -177,11 +212,13 @@ window.startAICooldownUI = function() {
 window.resetClassAiUsage = async function() {
     if (!window.isTeacherMode) return;
     if (!window.classKey || window.classKey === 'teacher_temp_global') {
-        return alert("학급에 접속한 상태에서만 사용할 수 있습니다.");
+        return window.uiAlert("학급에 접속한 상태에서만 사용할 수 있습니다.");
     }
     const keys = Object.keys(window.allStudentsData || {});
-    if (keys.length === 0) return alert("아직 접속한 학생이 없습니다.");
-    if (!confirm(`우리 반 ${keys.length}명의 오늘 AI 사용 횟수를 모두 초기화할까요?\n(다음 차시를 시작할 때 사용하시면 됩니다)`)) return;
+    if (keys.length === 0) return window.uiAlert("아직 접속한 학생이 없습니다.");
+    const ok = await window.uiConfirm(`우리 반 ${keys.length}명의 오늘 AI 사용 횟수를 모두 0회로 되돌립니다.\n다음 차시를 시작할 때 사용하시면 됩니다.`,
+        { title: '🔄 AI 사용 횟수를 초기화할까요?', okText: '초기화하기', cancelText: '취소' });
+    if (!ok) return;
 
     const today = window.getTodayStr();
     let success = 0;
@@ -225,10 +262,12 @@ window.addApiKeyUI = function() {
     window.showNotification("키를 추가했습니다. 아래 [변경사항 DB에 최종 저장]을 눌러야 반영됩니다.");
 };
 
-window.removeApiKeyUI = function(index) {
+window.removeApiKeyUI = async function(index) {
     const rec = window.apiKeyRecords[index];
     if (!rec) return;
-    if (!confirm(`API ${index + 1}번 키를 목록에서 삭제할까요?\n(저장 버튼을 눌러야 최종 반영됩니다)`)) return;
+    const ok = await window.uiConfirm(`API ${index + 1}번 키를 목록에서 뺍니다.\n아래 [변경사항 DB에 최종 저장]을 눌러야 실제로 반영됩니다.`,
+        { title: '🔑 키를 삭제할까요?', okText: '삭제하기', cancelText: '취소', danger: true });
+    if (!ok) return;
     window.apiKeyRecords.splice(index, 1);
     window.dynamicApiKeys = window.apiKeyRecords.map(r => r.key);
     window.renderApiKeysUI();
@@ -279,7 +318,7 @@ window.renderApiKeysUI = function() {
 };
 
 window.saveApiKey = async function() {
-    const model = document.getElementById('teacherApiModel').value.trim() || "gemini-3.8-flash";
+    const model = document.getElementById('teacherApiModel').value.trim() || window.DEFAULT_AI_MODEL;
     try {
         await setDoc(doc(db, "classes", window.classKey), { apiKeys: window.apiKeyRecords, apiModel: model }, { merge: true });
         window.dynamicApiModel = model;
@@ -288,6 +327,106 @@ window.saveApiKey = async function() {
         window.apiKeyCooldowns = {};
         window.showNotification("API 키 및 설정이 안전하게 저장되었습니다.");
     } catch(e) { window.showNotification("설정 저장에 실패했습니다."); }
+};
+
+// ==========================================
+// 교사용: 심사용 계정(0000) 전용 AI 키 관리
+// 선생님 학급 키와 분리되어 있어, 학급을 옮기거나 지워도 심사용은 계속 작동합니다.
+// ==========================================
+window.judgeApiKeyRecords = [];
+
+window.loadJudgeKeysForUI = async function() {
+    try {
+        const snap = await getDoc(doc(db, "classes", window.JUDGE_KEY_DOC));
+        const raw = snap.exists() ? snap.data().apiKeys : [];
+        const modelEl = document.getElementById('judgeApiModel');
+        if (modelEl) modelEl.value = (snap.exists() && snap.data().apiModel) ? snap.data().apiModel : '';
+        window.judgeApiKeyRecords = (Array.isArray(raw) ? raw : []).map(item =>
+            (typeof item === 'string')
+                ? { key: item.trim(), createdAt: '' }
+                : { key: String((item && item.key) || '').trim(), createdAt: (item && item.createdAt) || '' }
+        ).filter(r => r.key.length > 0);
+    } catch (e) {
+        console.error("심사용 키를 불러오지 못했습니다.", e);
+        window.judgeApiKeyRecords = [];
+    }
+    window.renderJudgeApiKeysUI();
+};
+
+window.addJudgeApiKeyUI = function() {
+    const input = document.getElementById('judgeApiKeyInput');
+    const val = input.value.trim();
+    if (!val) return;
+    if (window.judgeApiKeyRecords.some(r => r.key === val)) return window.showNotification("이미 등록된 키입니다.");
+    window.judgeApiKeyRecords.push({ key: val, createdAt: window.getTodayStr() });
+    input.value = '';
+    window.renderJudgeApiKeysUI();
+    window.showNotification("키를 추가했습니다. 아래 [심사용 키 저장]을 눌러야 반영됩니다.");
+};
+
+window.removeJudgeApiKeyUI = async function(index) {
+    if (!window.judgeApiKeyRecords[index]) return;
+    const ok = await window.uiConfirm(`심사용 API ${index + 1}번 키를 목록에서 뺍니다.\n아래 [심사용 키 저장]을 눌러야 실제로 반영됩니다.`,
+        { title: '🏅 심사용 키를 삭제할까요?', okText: '삭제하기', cancelText: '취소', danger: true });
+    if (!ok) return;
+    window.judgeApiKeyRecords.splice(index, 1);
+    window.renderJudgeApiKeysUI();
+};
+
+window.toggleJudgeApiKeyDetail = function(index, btnEl) {
+    const box = document.getElementById(`judgekey-detail-${index}`);
+    if (!box) return;
+    const opened = box.style.display !== 'none';
+    box.style.display = opened ? 'none' : 'block';
+    if (btnEl) btnEl.innerHTML = opened
+        ? '<i class="fa-solid fa-eye"></i> 자세히 보기'
+        : '<i class="fa-solid fa-eye-slash"></i> 숨기기';
+};
+
+window.renderJudgeApiKeysUI = function() {
+    const list = document.getElementById('judgeApiKeysList');
+    if (!list) return;
+    if (window.judgeApiKeyRecords.length === 0) {
+        list.innerHTML = '<div style="font-size:13px; color:var(--text-muted); text-align:center; padding:20px;">등록된 심사용 키가 없습니다.<br>키를 등록하지 않으면 우리 학급 키를 대신 사용합니다.</div>';
+        return;
+    }
+    list.innerHTML = window.judgeApiKeyRecords.map((rec, i) => {
+        const dateText = rec.createdAt ? `등록일 ${rec.createdAt}` : '등록일 정보 없음';
+        const head = rec.key.length > 6 ? rec.key.substring(0, 6) : rec.key;
+        return `
+        <div style="background:#ffffff; border:1px solid var(--border-color); border-radius:10px; padding:14px 16px; margin-bottom:8px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap;">
+                <div>
+                    <strong style="color:var(--accent); font-size:15px;">🏅 심사용 API ${i + 1}번</strong>
+                    <div style="font-size:12px; color:var(--text-muted); margin-top:4px;">${dateText}</div>
+                </div>
+                <div style="display:flex; gap:6px;">
+                    <button style="background:#f8fafc; border:1px solid var(--border-color); color:var(--text-main); padding:6px 12px; border-radius:6px; cursor:pointer; font-size:12px;" onclick="window.toggleJudgeApiKeyDetail(${i}, this)"><i class="fa-solid fa-eye"></i> 자세히 보기</button>
+                    <button style="background:#fef2f2; border:1px solid #fca5a5; color:#ef4444; padding:6px 12px; border-radius:6px; cursor:pointer; font-size:12px;" onclick="window.removeJudgeApiKeyUI(${i})"><i class="fa-solid fa-xmark"></i> 삭제</button>
+                </div>
+            </div>
+            <div id="judgekey-detail-${i}" style="display:none; margin-top:10px; background:#f8fafc; border:1px dashed var(--border-color); border-radius:6px; padding:10px;">
+                <div style="font-family:monospace; font-size:13px; letter-spacing:1px;">${head}••••••••••••••••</div>
+            </div>
+        </div>`;
+    }).join('');
+};
+
+window.saveJudgeApiKeys = async function() {
+    const modelEl = document.getElementById('judgeApiModel');
+    const model = (modelEl && modelEl.value.trim()) || "";   // 비우면 우리 학급 설정을 따른다
+    try {
+        await setDoc(doc(db, "classes", window.JUDGE_KEY_DOC), {
+            apiKeys: window.judgeApiKeyRecords,
+            apiModel: model,
+            note: "심사용 계정(_0000) 전용 AI 키입니다. 학급 데이터와 섞이지 않습니다."
+        }, { merge: true });
+        window.showNotification("심사용 AI 키가 저장되었습니다. 이제 모든 지역의 심사용 계정이 이 키를 사용합니다.");
+        await window.loadJudgeKeysForUI();
+    } catch (e) {
+        console.error("심사용 키 저장 실패", e);
+        window.showNotification("심사용 키 저장에 실패했습니다.");
+    }
 };
 
 // ==========================================
@@ -303,11 +442,16 @@ window.getBase64 = function(file) {
                 try {
                     const canvas = document.createElement('canvas');
                     let w = img.width; let h = img.height;
-                    if(w > h) { if(w > 400) { h *= 400/w; w = 400; } } else { if(h > 400) { w *= 400/h; h = 400; } }
+                    // 화면에는 최대 250px 정도로만 보여주므로 320px면 충분합니다.
+                    // 용량을 절반 가까이 줄여 학급 저장 공간을 아낍니다.
+                    const MAX = 320;
+                    if(w > h) { if(w > MAX) { h *= MAX/w; w = MAX; } } else { if(h > MAX) { w *= MAX/h; h = MAX; } }
                     canvas.width = w; canvas.height = h;
                     const ctx = canvas.getContext('2d');
+                    ctx.fillStyle = '#ffffff';
+                    ctx.fillRect(0, 0, w, h);
                     ctx.drawImage(img, 0, 0, w, h);
-                    const dataUrl = canvas.toDataURL('image/jpeg', 0.6);
+                    const dataUrl = canvas.toDataURL('image/jpeg', 0.55);
                     resolve({ inlineData: { data: dataUrl.split(',')[1], mimeType: 'image/jpeg' }, dataUrl: dataUrl });
                 } catch (err) { reject(err); }
             };
@@ -381,6 +525,22 @@ window.initSystem = async function(isTeacherModeParam = false) {
                 return setTimeout(() => location.reload(), 1500); 
             }
             
+            // 같은 번호로 다른 친구가 이미 접속해 있는지 확인한다
+            try {
+                const sSnap = await getDoc(doc(db, "classes", fullCode, "students", n));
+                if (sSnap.exists()) {
+                    const sData = sSnap.data();
+                    const lastSeen = sData.lastSeen || 0;
+                    const stillFresh = (Date.now() - lastSeen) < 5 * 60 * 1000;   // 5분
+                    const otherDevice = sData.deviceId && sData.deviceId !== window.getDeviceId();
+                    if (sData.isOnline === true && stillFresh && otherDevice) {
+                        document.getElementById('loadingScreen').style.display = 'none';
+                        window.showNotification(`${n}번은 지금 다른 친구가 사용 중이에요. 다른 번호로 접속해주세요. (5분 뒤에는 자동으로 풀립니다)`);
+                        return setTimeout(() => location.reload(), 3000);
+                    }
+                }
+            } catch (e) { console.warn("번호 중복 확인을 건너뜁니다.", e); }
+
             window.classKey = fullCode; 
             window.userKey = n; 
             window.currentUserId = n; 
@@ -406,7 +566,7 @@ window.initSystem = async function(isTeacherModeParam = false) {
                 window.classKey = fullCode;
             }
         } else {
-            window.classKey = 'teacher_temp_global'; window.dynamicApiKey = ""; window.dynamicApiKeys = []; window.dynamicApiModel = "gemini-3.8-flash";
+            window.classKey = 'teacher_temp_global'; window.dynamicApiKey = ""; window.dynamicApiKeys = []; window.dynamicApiModel = "";
         }
         window.userKey = `Teacher`; window.currentUserId = 'Teacher';
     }
@@ -423,12 +583,26 @@ window.initSystem = async function(isTeacherModeParam = false) {
             document.getElementById('setupMapCard').style.display = 'none'; 
             const aiCard = document.getElementById('setupAiLimitCard');
             if(aiCard) aiCard.style.display = 'none';
+            const judgeCard = document.getElementById('setupJudgeKeyCard');
+            if(judgeCard) judgeCard.style.display = 'none';
+            const judgeHint = document.getElementById('judgeKeyHint');
+            if(judgeHint) judgeHint.style.display = 'none';
         } else { 
             document.getElementById('monitorClassTitle').innerText = fullCode; 
             document.getElementById('setupApiKeyCard').style.display = 'block'; 
             document.getElementById('setupMapCard').style.display = 'block'; 
             const aiCard = document.getElementById('setupAiLimitCard');
             if(aiCard) aiCard.style.display = 'block';
+            // 심사용 키 카드는 심사용 학급(0000)으로 접속했을 때만 보여준다
+            const judgeCard = document.getElementById('setupJudgeKeyCard');
+            const judgeHint = document.getElementById('judgeKeyHint');
+            if (window.classKey.endsWith("_0000")) {
+                if(judgeCard) { judgeCard.style.display = 'block'; window.loadJudgeKeysForUI(); }
+                if(judgeHint) judgeHint.style.display = 'none';
+            } else {
+                if(judgeCard) judgeCard.style.display = 'none';
+                if(judgeHint) judgeHint.style.display = 'block';
+            }
             
             const regionMap = { seoul:"서울특별시", gyeonggi:"경기도", incheon:"인천광역시", gangwon:"강원특별자치도", chungnam:"충청남도", chungbuk:"충청북도", daejeon:"대전광역시", sejong:"세종특별자치시", gyeongbuk:"경상북도", gyeongnam:"경상남도", daegu:"대구광역시", busan:"부산광역시", ulsan:"울산광역시", jeonbuk:"전북특별자치도", jeonnam:"전라남도", gwangju:"광주광역시", jeju:"제주특별자치도" };
             let displayCode = window.classKey;
@@ -486,18 +660,7 @@ window.initSystem = async function(isTeacherModeParam = false) {
                 }
 
                 if (window.classKey.endsWith("_0000")) {
-                    getDoc(doc(db, "classes", window.MASTER_CLASS_KEY)).then(masterSnap => {
-                        if (masterSnap.exists()) {
-                            const mData = masterSnap.data();
-                            if (mData.apiKeys && Array.isArray(mData.apiKeys) && mData.apiKeys.length > 0) {
-                                window.setApiKeyRecords(mData.apiKeys);
-                            } else if (mData.apiKey) {
-                                window.setApiKeyRecords([mData.apiKey]);
-                            }
-                            if (mData.apiModel && !data.apiModel) window.dynamicApiModel = mData.apiModel;
-                            if (window.isTeacherMode) window.renderApiKeysUI();
-                        }
-                    });
+                    window.loadJudgeApiKeys();
                 }
 
                 window.gameState.problems = data.problems || []; 
@@ -522,18 +685,7 @@ window.initSystem = async function(isTeacherModeParam = false) {
 
                 if(window.isTeacherMode && document.getElementById('monitorDetailView').style.display === 'block') { const currentlyViewingNum = document.getElementById('dtNum').innerText; if(currentlyViewingNum) window.showStudentDetails(currentlyViewingNum); }
             } else if (window.classKey.endsWith("_0000")) {
-                getDoc(doc(db, "classes", window.MASTER_CLASS_KEY)).then(masterSnap => {
-                    if (masterSnap.exists()) {
-                        const mData = masterSnap.data();
-                        if (mData.apiKeys && Array.isArray(mData.apiKeys) && mData.apiKeys.length > 0) {
-                            window.setApiKeyRecords(mData.apiKeys);
-                        } else if (mData.apiKey) {
-                            window.setApiKeyRecords([mData.apiKey]);
-                        }
-                        if (mData.apiModel) window.dynamicApiModel = mData.apiModel;
-                        if (window.isTeacherMode) window.renderApiKeysUI();
-                    }
-                });
+                window.loadJudgeApiKeys();
                 
                 window.gameState.mapCenter = fallbackMapCenter;
                 window.gameState.problems = [];
@@ -612,6 +764,7 @@ window.initSystem = async function(isTeacherModeParam = false) {
                 }
                 
                 window.updateUI(true);
+                window.startHeartbeat();
                 setTimeout(() => { document.getElementById('loadingScreen').style.display = 'none'; }, 1500);
             });
         } else {
@@ -624,7 +777,12 @@ window.initSystem = async function(isTeacherModeParam = false) {
     } else { setTimeout(() => { document.getElementById('loadingScreen').style.display = 'none'; }, 1000); }
 };
 
-const handleOffline = () => { if(!window.isTeacherMode && window.classKey && window.userKey) { setDoc(doc(db, "classes", window.classKey, "students", window.userKey), { isOnline: false }, { merge: true }); } };
+const handleOffline = () => {
+    if (window.heartbeatTimer) { clearInterval(window.heartbeatTimer); window.heartbeatTimer = null; }
+    if(!window.isTeacherMode && window.classKey && window.userKey) {
+        setDoc(doc(db, "classes", window.classKey, "students", window.userKey), { isOnline: false, lastSeen: 0 }, { merge: true });
+    }
+};
 window.addEventListener('pagehide', handleOffline); 
 window.addEventListener('visibilitychange', () => { if(document.visibilityState === 'hidden') handleOffline(); });
 
@@ -664,26 +822,47 @@ window.saveGameState = async function() {
 // AI 키가 준비될 때까지 잠시 기다린다
 // (심사용 계정은 마스터 학급에서 키를 받아오므로 로그인 직후 잠깐 비어 있습니다)
 // ==========================================
+// 심사용 계정이 쓸 AI 키를 불러온다
+// ① 심사용 전용 문서(_judge_master) → ② 없으면 예비 학급(MASTER_CLASS_KEY)
+window.loadJudgeApiKeys = async function() {
+    try {
+        const jSnap = await getDoc(doc(db, "classes", window.JUDGE_KEY_DOC));
+        if (jSnap.exists()) {
+            const j = jSnap.data();
+            if (Array.isArray(j.apiKeys) && j.apiKeys.length > 0) {
+                window.setApiKeyRecords(j.apiKeys);
+                if (j.apiModel) window.dynamicApiModel = j.apiModel;
+                if (window.isTeacherMode) window.renderApiKeysUI();
+                return true;
+            }
+        }
+    } catch (e) {
+        console.warn("[AI] 심사용 전용 키 문서를 읽지 못했습니다. 예비 학급으로 넘어갑니다.", e);
+    }
+
+    try {
+        const mSnap = await getDoc(doc(db, "classes", window.MASTER_CLASS_KEY));
+        if (mSnap.exists()) {
+            const m = mSnap.data();
+            if (Array.isArray(m.apiKeys) && m.apiKeys.length > 0) window.setApiKeyRecords(m.apiKeys);
+            else if (m.apiKey) window.setApiKeyRecords([m.apiKey]);
+            if (m.apiModel) window.dynamicApiModel = m.apiModel;
+            if (window.isTeacherMode) window.renderApiKeysUI();
+            return (window.dynamicApiKeys || []).length > 0;
+        }
+    } catch (e) {
+        console.error("[AI] 심사용 AI 키를 불러오지 못했습니다.", e);
+    }
+    return false;
+};
+
 window.ensureApiKeysReady = async function(maxWaitMs = 6000) {
     const hasKeys = () => (Array.isArray(window.dynamicApiKeys) && window.dynamicApiKeys.length > 0) || !!window.dynamicApiKey;
     if (hasKeys()) return true;
 
-    // 심사용 학급이면 마스터 학급에서 직접 한 번 더 가져온다
+    // 심사용 학급이면 전용 문서에서 직접 한 번 더 가져온다
     if (window.classKey && window.classKey.endsWith("_0000")) {
-        try {
-            const masterSnap = await getDoc(doc(db, "classes", window.MASTER_CLASS_KEY));
-            if (masterSnap.exists()) {
-                const mData = masterSnap.data();
-                if (Array.isArray(mData.apiKeys) && mData.apiKeys.length > 0) {
-                    window.setApiKeyRecords(mData.apiKeys);
-                } else if (mData.apiKey) {
-                    window.setApiKeyRecords([mData.apiKey]);
-                }
-                if (mData.apiModel && !window.dynamicApiModel) window.dynamicApiModel = mData.apiModel;
-            }
-        } catch (e) {
-            console.error("마스터 학급 AI 키를 불러오지 못했습니다:", e);
-        }
+        await window.loadJudgeApiKeys();
     }
     if (hasKeys()) return true;
 
