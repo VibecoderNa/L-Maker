@@ -12,6 +12,7 @@ window.renderProblemBoard = function() {
     board.innerHTML = `<div class="board-item-selectable" style="background: var(--note-1);" onclick="window.selectProblem(this, '초등학교 앞 횡단보도 고장 방치')">${vipGuide}<div class="author-tag">👤 예시 자료</div><strong style="font-size: 18px; margin-bottom: 5px;">초등학교 앞 횡단보도 고장 방치</strong><div style="font-size: 14px; margin-top: 5px;">신호등이 고장나서 위험합니다.</div></div>`;
     if(window.gameState.problems) {
         window.gameState.problems.forEach((p, index) => {
+            // 기존 데이터에 혹시 남아있을 수 있는 해시태그 호환성 유지
             let tagsContainer = '';
             if (p.keywords && p.keywords.length > 0) {
                 const tagHtml = p.keywords.map(kw => `<span class="tag">${kw}</span>`).join('');
@@ -80,6 +81,7 @@ window.renderSharedProposals = function() {
     });
 }
 
+// 💡 요청하신 수정 사항 적용 구간
 window.renderMyProposals = function() {
     const list = document.getElementById('myProposalsList');
     if(!list) return;
@@ -94,14 +96,28 @@ window.renderMyProposals = function() {
     myProps.forEach(p => {
         let statusHtml = '';
         let btnHtml = '';
+        let feedbackHtml = ''; // 신규: 상태에 따른 피드백(검토중 문구 및 AI 의견)을 담을 변수
         
         if(p.status === 'waiting') {
             statusHtml = '<span style="color:#d97706; font-weight:bold; background:#fef08a; padding:4px 8px; border-radius:4px; font-size:12px;">⏳ 심사 대기중</span>';
+            // 💡 추가된 안내 문구
+            feedbackHtml += `<div style="font-size:13px; color:#b45309; background:#fef3c7; padding:12px; border-radius:8px; border:1px solid #fde68a; margin-top:10px; text-align:center;">
+                <strong>⏳ 아직 AI 담당관과 선생님이 해당 제안을 검토중입니다.</strong>
+            </div>`;
         } else if(p.status === 'approved') {
             statusHtml = '<span style="color:#166534; font-weight:bold; background:#bbf7d0; padding:4px 8px; border-radius:4px; font-size:12px;">✅ 승인 완료</span>';
         } else if(p.status === 'rejected') {
             statusHtml = '<span style="color:#991b1b; font-weight:bold; background:#fecaca; padding:4px 8px; border-radius:4px; font-size:12px;">❌ 재검토 요망</span>';
             btnHtml = `<button class="action-btn accent-btn" style="margin-top:15px; padding:10px 15px; font-size:14px;" onclick="window.editMyProposal(${p.id})"><i class="fa-solid fa-pen"></i> 다시 작성하기</button>`;
+        }
+
+        // 💡 누락되었던 AI 피드백 시각화 코드 추가 (공유 게시판과 동일한 디자인)
+        if (p.aiFeedback) {
+            feedbackHtml += `<div style="font-size:13px; background:rgba(2, 132, 199, 0.05); padding:10px; border-radius:8px; border:1px solid rgba(2, 132, 199, 0.2); margin-top:10px;"><strong>🤖 AI 1차 의견:</strong> ${p.aiFeedback} <span style="color:var(--primary); font-weight:bold;">(기본 획득: ${p.aiBudget || 0}G)</span></div>`;
+        }
+        
+        if(p.teacherFeedback) {
+            feedbackHtml += `<div style="font-size:14px; background:#fef2f2; padding:12px; border-radius:8px; color:#991b1b; border:1px solid #fca5a5; margin-top:10px;"><strong>👨‍🏫 선생님 코멘트:</strong> ${p.teacherFeedback}</div>`;
         }
         
         html += `<div style="background:#ffffff; border:1px solid var(--border-color); padding:20px; border-radius:12px; box-shadow:0 2px 4px rgba(0,0,0,0.02);">
@@ -110,7 +126,7 @@ window.renderMyProposals = function() {
                 <div>${statusHtml}</div>
             </div>
             <div style="font-size:14px; color:var(--text-main); margin-bottom:15px; line-height:1.6; background:#f8fafc; padding:15px; border-radius:8px; border:1px solid #e2e8f0;">${(p.proposal||'').replace(/\n/g, '<br>')}</div>
-            ${p.teacherFeedback ? `<div style="font-size:14px; background:#fef2f2; padding:12px; border-radius:8px; color:#991b1b; border:1px solid #fca5a5;"><strong>👨‍🏫 선생님 코멘트:</strong> ${p.teacherFeedback}</div>` : ''}
+            ${feedbackHtml}
             ${btnHtml}
         </div>`;
     });
@@ -150,7 +166,6 @@ window.goToPromoStep2 = function() {
     const target = document.getElementById('promoTarget').value.trim();
     let slogan = document.getElementById('promoSlogan').value.trim().replace(/^["']+|["']+$/g, '');
     
-    // 💡 수정됨: 딱딱한 alert를 부드러운 showNotification으로 교체[cite: 3]
     if(!topic || !target || !slogan) {
         return window.showNotification("홍보 대상, 타겟 설정, 핵심 슬로건을 모두 작성해주세요.");
     }
@@ -234,7 +249,6 @@ window.executeCampaign = async function() {
     const slogan = document.getElementById('displayStrategySlogan').innerText.replace(/^["']+|["']+$/g, '');
     const content = document.getElementById('promoContentInput').value.trim();
     
-    // 💡 수정됨: alert 교체[cite: 3]
     if(!content) return window.showNotification("상세 기획안 및 홍보 문구를 작성해주세요.");
 
     let mediaName = "";
@@ -245,7 +259,6 @@ window.executeCampaign = async function() {
     if(radio.value === 'custom') {
         mediaName = document.getElementById('customMediaName').value.trim();
         cost = parseInt(document.getElementById('customMediaBudget').value);
-        // 💡 수정됨: alert 교체[cite: 3]
         if(!mediaName || isNaN(cost) || cost <= 0) return window.showNotification("자율 매체명과 필요 예산을 올바르게 입력해주세요.");
     } else {
         mediaName = radio.getAttribute('data-name');
@@ -253,8 +266,7 @@ window.executeCampaign = async function() {
     }
 
     if(window.gameState.budget < cost) {
-        // 💡 수정됨: alert 교체[cite: 3]
-        return window.showNotification(`예산 부족! (현재 보유: ${window.gameState.budget}G / 필요 예산: ${cost}G)\n기호를 등록하거나 친구에게 좋아요를 받으세요.`);
+        return window.showNotification(`예산이 부족합니다! (현재 보유 예산: ${window.gameState.budget}G / 필요 예산: ${cost}G)\n지도의 기호를 추가로 등록하거나 친구의 게시물에 좋아요를 받아보세요.`);
     }
 
     let imageUrl = null;

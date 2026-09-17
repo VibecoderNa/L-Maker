@@ -169,10 +169,10 @@ window.initSystem = async function(isTeacherModeParam = false) {
     window.isTeacherMode = isTeacherModeParam;
     
     const tips = [
-        "지도에 기호를 표시할 때는 다른 사람들이 쉽게 알아볼 수 있도록 '범례'를 꼭 만들어야 해요.",
-        "좋은 해결 방안은 실현 가능성이 높고, 많은 사람들에게 도움이 되는 '공공성'을 갖춰야 합니다.",
-        "우리 지역의 장점을 알릴 때는 누구에게(타겟), 어떤 내용(핵심 슬로건)을 전달할지 명확히 해야 해요.",
-        "도시를 건설할 때는 경제 발전뿐만 아니라 환경과 사람들의 행복(만족도)도 함께 생각하는 '지속 가능한 발전'이 중요합니다."
+        "💡 시장님, 그거 아시나요?\n지역 주민들이 겪는 불편함을 '지역 문제'라고 해요. 이를 해결하기 위해 의견을 모으는 과정이 '민주주의'랍니다!",
+        "💡 시장님, 그거 아시나요?\n시청, 경찰서, 소방서처럼 지역 주민들의 편안하고 안전한 생활을 위해 세운 기관을 '공공 기관'이라고 부릅니다.",
+        "💡 시장님, 그거 아시나요?\n지역 문제를 해결하기 위해 주민들이 스스로 참여하는 것을 '주민 참여'라고 해요.",
+        "💡 시장님, 그거 아시나요?\n살기 좋은 지역을 만들기 위해서는 환경을 보호하면서도 발전하는 '지속 가능한 발전'이 중요합니다."
     ];
     
     const loadingTipElement = document.getElementById('loadingTip');
@@ -187,7 +187,6 @@ window.initSystem = async function(isTeacherModeParam = false) {
     window.classDataLoaded = false; window.studentDataLoaded = false;
     window.initialMapCenterSet = false; 
 
-    // 💡 수정됨: 학생 및 교사 로그인 시, alert를 부드러운 showNotification으로 변경하고 지연된 reload 처리
     if(!window.isTeacherMode) {
         if(!fullCode) { 
             document.getElementById('loadingScreen').style.display = 'none'; 
@@ -200,9 +199,8 @@ window.initSystem = async function(isTeacherModeParam = false) {
             return setTimeout(() => location.reload(), 1500); 
         }
         
-        // 💡 수정됨: 지역별 방 덮어쓰기 금지 (접미사로 프리패스 판별)
         if (fullCode.endsWith("_0000") && n === "0") {
-            window.classKey = fullCode; // 사용자가 입력한 방 그대로 사용 (데이터 분리)
+            window.classKey = fullCode; 
             window.userKey = "0";
             window.currentUserId = "0";
         } else {
@@ -226,7 +224,6 @@ window.initSystem = async function(isTeacherModeParam = false) {
         window.dynamicApiKey = ""; window.dynamicApiKeys = []; window.dynamicApiModel = ""; 
     } else {
         if (fullCode) {
-            // 💡 수정됨: 교사용 프리패스도 접미사 검사로 처리
             if (fullCode.endsWith("_0000")) {
                 window.classKey = fullCode; 
             } else {
@@ -269,7 +266,6 @@ window.initSystem = async function(isTeacherModeParam = false) {
             let displayCode = window.classKey;
             if(window.classKey.includes('_')) { const parts = window.classKey.split('_'); displayCode = (regionMap[parts[0]] || parts[0]) + " " + parts[1]; }
             
-            // 💡 수정됨: 교사용으로 접속해도 심사위원 프리패스 방인지 정확하게 인지하여 지역 표시
             if (window.classKey.endsWith("_0000")) {
                 const rPrefix = window.classKey.split('_')[0];
                 displayCode = (regionMap[rPrefix] || rPrefix) + " 0000 (심사용)";
@@ -318,7 +314,6 @@ window.initSystem = async function(isTeacherModeParam = false) {
                     if(window.isTeacherMode) document.getElementById('teacherApiModel').value = data.apiModel;
                 }
 
-                // 💡 수정됨: Suffix 검사로 심사위원 방 마스터 키 권한 부여 (학생/교사 모두)
                 if (window.classKey.endsWith("_0000")) {
                     getDoc(doc(db, "classes", "gyeongbuk_6007")).then(masterSnap => {
                         if (masterSnap.exists() && masterSnap.data().apiKeys) {
@@ -350,7 +345,6 @@ window.initSystem = async function(isTeacherModeParam = false) {
 
                 if(window.isTeacherMode && document.getElementById('monitorDetailView').style.display === 'block') { const currentlyViewingNum = document.getElementById('dtNum').innerText; if(currentlyViewingNum) window.showStudentDetails(currentlyViewingNum); }
             } else if (window.classKey.endsWith("_0000")) {
-                // 💡 수정됨: 아직 DB에 생성되지 않은 신규 _0000 테스트 방 접속 시에도 마스터 키 부여
                 getDoc(doc(db, "classes", "gyeongbuk_6007")).then(masterSnap => {
                     if (masterSnap.exists() && masterSnap.data().apiKeys) {
                         window.dynamicApiKeys = masterSnap.data().apiKeys;
@@ -443,7 +437,8 @@ window.initSystem = async function(isTeacherModeParam = false) {
 }
 
 const handleOffline = () => { if(!window.isTeacherMode && window.classKey && window.userKey) { setDoc(doc(db, "classes", window.classKey, "students", window.userKey), { isOnline: false }, { merge: true }); } };
-window.addEventListener('pagehide', handleOffline); window.addEventListener('beforeunload', handleOffline); window.addEventListener('unload', handleOffline);
+window.addEventListener('pagehide', handleOffline); 
+window.addEventListener('visibilitychange', () => { if(document.visibilityState === 'hidden') handleOffline(); });
 
 window.saveGameState = async function() {
     if(!window.classKey || window.classKey === 'teacher_temp_global') return;

@@ -1,9 +1,7 @@
 // api.js - 구글 Gemini AI 통신 및 데이터 제출 로직 전담
 
-// 💡 신규: AI 기능 다중 클릭 방지를 위한 전역 상태 변수
 window.isAILoading = false;
 
-// 💡 API 키 순환(Failover) 로직 적용 (429 한도 초과 등 에러 방어)
 window.callGeminiAPI = async function(prompt) {
     const keys = (window.dynamicApiKeys && window.dynamicApiKeys.length > 0) 
                  ? window.dynamicApiKeys 
@@ -18,41 +16,42 @@ window.callGeminiAPI = async function(prompt) {
         const currentKey = keys[i].trim();
         const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${currentKey}`;
         
-        let maxRetries = 2; // 한 키당 2번까지 재시도
-        for(let j=0; j < maxRetries; j++) {
-            try {
-                const response = await fetch(url, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(data)
-                });
-                
-                if (response.ok) {
-                    const result = await response.json();
-                    return result.candidates[0].content.parts[0].text;
-                }
-                
-                if (response.status === 429) {
-                    if (i < keys.length - 1) {
-                        console.warn(`[Failover] ${i+1}번째 API 키 한도 초과. 다음 키로 교체하여 재시도합니다...`);
-                        break; 
-                    } else {
-                        if (j === maxRetries - 1) throw new Error("모든 API 키가 한도를 초과했습니다.");
-                    }
-                } 
-                else if (response.status >= 500) {
-                    if (j === maxRetries - 1) {
-                        if(i === keys.length - 1) throw new Error(`API 서버 오류(${response.status})`);
-                        break; 
-                    }
+        try {
+            const response = await fetch(url, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data)
+            });
+            
+            if (response.ok) {
+                const result = await response.json();
+                return result.candidates[0].content.parts[0].text;
+            }
+            
+            if (response.status === 429) {
+                if (i < keys.length - 1) {
+                    console.warn(`[Failover] ${i+1}번째 API 키 한도 초과. 1초 대기 후 다음 키로 교체합니다...`);
+                    await new Promise(resolve => setTimeout(resolve, 1000)); 
+                    continue; 
                 } else {
-                    throw new Error(`API 연결 오류: ${response.status}`);
+                    throw new Error("모든 API 키가 한도를 초과했습니다.");
                 }
-            } catch(err) {
-                if (j === maxRetries - 1 && i === keys.length - 1) {
-                    window.showNotification("시장님, 현재 안건 처리가 지연되고 있습니다. 잠시 후 다시 시도해주십시오.");
-                    throw err;
+            } 
+            else if (response.status >= 500) {
+                if (i < keys.length - 1) {
+                    console.warn(`[Failover] 서버 오류(${response.status}). 1초 대기 후 다음 키로 시도합니다...`);
+                    await new Promise(resolve => setTimeout(resolve, 1000));
+                    continue; 
+                } else {
+                    throw new Error(`API 서버 오류(${response.status})`);
                 }
+            } else {
+                throw new Error(`API 연결 오류: ${response.status}`);
+            }
+        } catch(err) {
+            if (i === keys.length - 1) {
+                window.showNotification("시장님, 현재 안건 처리가 지연되고 있습니다. 잠시 후 다시 시도해주십시오.");
+                throw err;
             }
             await new Promise(resolve => setTimeout(resolve, 1000));
         }
@@ -60,14 +59,12 @@ window.callGeminiAPI = async function(prompt) {
 }
 
 window.getAIAdvice = async function() {
-    // 💡 신규: 중복 실행 방지
     if(window.isAILoading) return;
 
     const textData = document.getElementById('textDataInput').value.trim();
     if(!textData || textData.length < 10) return window.showNotification("자료를 조금 더 자세히 입력해주세요!");
 
     window.isAILoading = true;
-    document.getElementById('aiLoadingOverlay').classList.add('active'); // 클릭 차단 오버레이 활성화
 
     const adviceArea = document.getElementById('aiAdviceArea');
     adviceArea.style.display = 'block';
@@ -90,7 +87,6 @@ window.getAIAdvice = async function() {
         adviceArea.innerHTML = `<span style="color:#ef4444;">오류가 발생했습니다. 잠시 후 다시 시도해주세요.</span>`;
     } finally {
         window.isAILoading = false;
-        document.getElementById('aiLoadingOverlay').classList.remove('active'); // 오버레이 해제
     }
 }
 
@@ -129,19 +125,19 @@ window.submitProblemToBoard = async function() {
 }
 
 window.submitProposal = async function() {
-    // 💡 신규: 중복 실행 방지
     if(window.isAILoading) return;
 
     const text = document.getElementById('proposalText').value.trim();
     if(text.length < 20) return window.showNotification("제안서를 조금 더 자세히 작성해주세요.");
 
     window.isAILoading = true;
-    document.getElementById('aiLoadingOverlay').classList.add('active');
+    document.getElementById('aiLoadingOverlay').classList.add('active'); 
     
     const tips = [
-        "문제의 진짜 원인을 찾는 것이 중요해요.", 
-        "해결 방안이 현실적으로 가능한지 생각해보세요.", 
-        "특정 개인보다 지역 주민 모두에게 도움이 되는 방안이 좋아요."
+        "💡 시장님, 그거 아시나요?\n지역 주민들이 겪는 불편함을 '지역 문제'라고 해요. 이를 해결하기 위해 의견을 모으는 과정이 바로 '민주주의'랍니다!",
+        "💡 시장님, 그거 아시나요?\n시청, 도청, 경찰서, 소방서처럼 지역 주민들의 편안하고 안전한 생활을 위해 국가가 세운 기관을 '공공 기관'이라고 부릅니다.",
+        "💡 시장님, 그거 아시나요?\n지역 문제를 해결하기 위해 주민들이 스스로 참여하는 것을 '주민 참여'라고 해요. 우리가 만드는 이 제안서도 훌륭한 참여 방법이랍니다!",
+        "💡 시장님, 그거 아시나요?\n살기 좋은 지역을 만들기 위해서는 환경을 보호하면서도 경제가 발전하는 '지속 가능한 발전'을 생각해야 해요."
     ];
     document.getElementById('aiLoadingTipText').innerText = tips[Math.floor(Math.random() * tips.length)];
 
@@ -214,7 +210,6 @@ window.submitProposal = async function() {
 }
 
 window.getAIConsulting = async function() {
-    // 💡 신규: 중복 실행 방지
     if(window.isAILoading) return;
 
     const topic = document.getElementById('promoTopic').value.trim();
@@ -224,16 +219,11 @@ window.getAIConsulting = async function() {
     if(!topic || !target || !slogan) return window.showNotification("홍보 대상, 타겟 설정, 슬로건을 모두 작성한 후 조언을 구해보세요.");
 
     window.isAILoading = true;
-    document.getElementById('aiLoadingOverlay').classList.add('active'); // 전체 화면 로딩 활성화
-    
-    // 로딩 텍스트를 해당 기능에 맞게 수정
-    const tipText = document.getElementById('aiLoadingTipText');
-    if(tipText) tipText.innerText = "AI 담당관이 마케팅 전략을 검토 중입니다...";
 
     const resArea = document.getElementById('consultingResult');
     const resText = document.getElementById('consultingText');
     resArea.style.display = 'block';
-    resText.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> 분석 중...';
+    resText.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> AI 담당관이 분석 중입니다...';
 
     try {
         const keys = (window.dynamicApiKeys && window.dynamicApiKeys.length > 0) ? window.dynamicApiKeys : (window.dynamicApiKey ? [window.dynamicApiKey] : []);
@@ -254,6 +244,5 @@ window.getAIConsulting = async function() {
         resText.innerHTML = `<span style="color:#ef4444;">오류가 발생했습니다. 잠시 후 다시 시도해주세요.</span>`;
     } finally {
         window.isAILoading = false;
-        document.getElementById('aiLoadingOverlay').classList.remove('active');
     }
 }
