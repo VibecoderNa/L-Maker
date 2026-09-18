@@ -4,6 +4,7 @@
 //        3) 429 쿨다운 / 503 지수 백오프 / 잘못된 키 자동 제외
 //        4) AI 비서 힌트에 사진 자료 다시 반영
 //        5) [보완] 모델 변경 시 이전 모델 기록 자동 초기화 / ** 기호 정리
+//        6) [교과 연계] 학습 내용·대기 팁을 1단계(문제 해결)/2단계(홍보)로 나눠 적용
 
 window.isAILoading = false;
 
@@ -40,48 +41,94 @@ window.AI_TOTAL_DEADLINE_FAST_MS  = 45000;  // 재시도까지 포함한 전체 
 window.AI_MAX_503_TRIES           = 4;      // 서버 혼잡(503) 총 재시도 횟수
 
 // ==========================================
-// ★★★ 교과 학습 내용 (수업에서 다룬 개념) ★★★
-//   여기 한 곳만 고치면 아래 네 곳의 AI 답변에 모두 반영됩니다.
-//     1) AI 비서 힌트        2) 해결 제안서 1차 검토
-//     3) AI 홍보 컨설팅      4) 홍보 기획안 1차 검토 (ui.js)
+// ★★★ 교과 학습 내용 (수업에서 다룬 개념) ★★★  [2026-09-19 교과 연계]
+//   두 묶음으로 나뉘어 있고, 각 단계의 AI 답변에만 들어갑니다.
 //
-//   사용법: 아래 배열에 "개념: 설명" 형태로 한 줄씩 추가하세요.
+//   problem (파트 1: 지역 문제의 의미와 해결 과정)
+//       → AI 비서 힌트, 해결 제안서 1차 검토
+//   promo   (파트 2: 지역을 알리고 홍보하는 노력)
+//       → AI 홍보 컨설팅, 홍보 기획안 1차 검토 (ui.js)
+//
+//   사용법: 해당 묶음에 "개념: 설명" 형태로 한 줄씩 추가/수정하세요.
 // ==========================================
-window.LEARNING_CONCEPTS = [
-    // 예시)
-    // "중심지: 사람들이 많이 모이는 곳. 시장, 버스터미널, 시청 주변이 대표적이다.",
-    // "공공 기관: 주민 모두의 편안하고 안전한 생활을 위해 세운 곳. 시청, 경찰서, 소방서 등.",
-];
+window.LEARNING_CONCEPTS = {
+    problem: [
+        "지역 문제의 뜻: 우리 지역에 사는 사람들이 겪는 불편함이나 갈등으로, 환경, 교통, 시설 부족 등 다양한 문제가 있다.",
+        "문제의 원인 파악: 지역 문제를 해결하려면 현상을 자세히 살펴보고, 문제가 왜 생겼는지 원인을 정확하게 찾아야 한다.",
+        "주민 참여의 중요성: 지역 문제는 주민들이 서로 의견을 모으고 토론하며 함께 해결해 나가는 과정이 매우 중요하다.",
+        "공공기관의 역할: 시청, 구청, 주민센터 등의 기관에서 지역 문제를 해결하기 위해 다양한 제도와 노력을 기울인다.",
+        "실천 방안 모색: 캠페인 열기, 주민 의견 수렴 등 일상 속에서 문제를 해결할 수 있는 대안을 행동으로 옮긴다."
+    ],
+    promo: [
+        "알릴 거리 찾기: 우리 지역의 자랑거리인 문화유산, 자연환경, 특산물, 축제, 인물 등을 발굴한다.",
+        "다양한 홍보 방법: 인터넷 누리집, 홍보 책자, 영상, SNS 등 여러 가지 매체를 활용해 효과적으로 지역을 알린다.",
+        "축제와 스토리텔링: 지역 고유의 특징이나 재미있는 이야기에 엮어 축제를 열면 사람들의 관심을 더 많이 끌 수 있다.",
+        "지역 경제 활성화: 지역을 널리 홍보하면 관광객이 찾아오고 특산물 판매로 이어져 지역 경제가 더욱 발전하게 된다."
+    ]
+};
+
+// 지금 어느 단계의 AI 요청인지 알아낸다 → 'problem' 또는 'promo'
+//   ※ ui.js의 홍보 기획안 제출(executeCampaign)은 단계를 따로 알려주지 않지만,
+//     제출 중에는 window.isCampaignSubmitting이 true이므로 이것으로 '홍보'임을 압니다.
+//     덕분에 ui.js는 고치지 않아도 됩니다.
+window.detectLearningPart = function(part) {
+    if (part === 'problem' || part === 'promo') return part;
+    return window.isCampaignSubmitting ? 'promo' : 'problem';
+};
 
 // [2026-09-19 보완] 모든 AI 요청에 붙는 '꾸밈 기호 금지' 규칙
 //   AI가 **굵게** 같은 기호를 쓰면 학생 화면에 별표가 그대로 보였습니다.
 window.AI_PLAIN_TEXT_RULE = '\n\n※ 별표(**)나 샵(#) 같은 꾸밈 기호는 쓰지 말고, 평범한 문장으로만 써줘.';
 
-// 위 배열을 AI에게 전달할 문장으로 만들어 준다
-// [2026-09-19 보완] 학습 내용이 비어 있어도 '꾸밈 기호 금지' 규칙은 항상 붙습니다.
-window.buildLearningBlock = function() {
+// 학습 내용을 AI에게 전달할 문장으로 만들어 준다
+//   part: 'problem'(1단계) / 'promo'(2단계). 비우면 detectLearningPart()가 알아서 고릅니다.
+window.buildLearningBlock = function(part) {
+    const key = window.detectLearningPart(part);
+    const list = (window.LEARNING_CONCEPTS && window.LEARNING_CONCEPTS[key]) || [];
     let block = '';
-    if (Array.isArray(window.LEARNING_CONCEPTS) && window.LEARNING_CONCEPTS.length > 0) {
+    if (Array.isArray(list) && list.length > 0) {
         block = '\n\n[우리 반이 수업에서 배운 내용]\n'
-            + window.LEARNING_CONCEPTS.map(s => '- ' + s).join('\n')
-            + '\n※ 이 낱말들을 억지로 나열하지 마. 학생의 글과 관련 있는 것만 1~2가지 골라,'
+            + list.map(s => '- ' + s).join('\n')
+            + '\n※ 이 내용을 억지로 나열하지 마. 학생의 글과 관련 있는 것만 1~2가지 골라,'
             + ' 초등학교 4학년이 알아들을 쉬운 말로 자연스럽게 녹여서 써줘.';
     }
     return block + window.AI_PLAIN_TEXT_RULE;
 };
 
-// 로딩 중 보여줄 학습 팁 (4학년 사회 '우리 지역' 관련 개념)
-// ※ "💡 시장님, 그거 아시나요?" 제목은 index.html에 이미 있으므로 본문에는 넣지 않습니다.
-window.aiLoadingTips = [
-    "지역 주민들이 함께 겪는 불편함을 '지역 문제'라고 해요. 여러 사람에게 영향을 주기 때문에 함께 해결해야 한답니다.",
-    "시청, 도청, 경찰서, 소방서처럼 주민 모두의 편안하고 안전한 생활을 위해 세운 곳을 '공공 기관'이라고 불러요.",
-    "주민이 지역의 일에 의견을 내고 참여하는 것을 '주민 참여'라고 해요. 지금 쓰는 제안서도 훌륭한 참여 방법이랍니다.",
-    "좋은 해결 방안은 정말로 실천할 수 있어야 해요. 이것을 '실현 가능성'이라고 부릅니다.",
-    "나 혼자가 아니라 여러 사람에게 두루 도움이 되는 성질을 '공공성'이라고 해요.",
-    "환경을 지키면서도 함께 발전하는 것을 '지속 가능한 발전'이라고 합니다.",
-    "우리가 낸 세금이 모여 도로를 고치고 도서관을 짓는 데 쓰여요. 이 돈을 '예산'이라고 부릅니다.",
-    "사람들이 많이 모이는 곳을 '중심지'라고 해요. 시장, 버스터미널, 시청 주변이 대표적이랍니다."
-];
+// ==========================================
+// ★ 기다리는 동안 보여줄 "시장님, 그거 아시나요?" 팁  [2026-09-19 교과 연계]
+//   1단계(문제 해결)에서는 problem, 2단계(홍보)에서는 promo 묶음이 나옵니다.
+//   학생이 직접 읽는 문장이므로 완성된 문장으로 적어주세요.
+// ==========================================
+window.aiLoadingTips = {
+    problem: [
+        "우리 지역에 사는 사람들이 함께 겪는 불편함이나 갈등을 '지역 문제'라고 해요. 환경, 교통, 시설 부족처럼 종류가 아주 다양하답니다.",
+        "지역 문제를 해결하려면 먼저 '이 문제는 왜 생겼을까?'를 따져 봐야 해요. 원인을 정확히 찾아야 딱 맞는 해결 방법이 보인답니다.",
+        "주민들이 서로 의견을 모으고 토론하며 함께 문제를 해결해 가는 것을 '주민 참여'라고 해요. 지금 쓰는 제안서도 훌륭한 주민 참여랍니다.",
+        "시청, 구청, 주민센터 같은 '공공 기관'은 지역 문제를 해결하기 위해 여러 가지 제도를 만들고 노력한답니다.",
+        "캠페인 열기, 주민 의견 모으기, 필요한 규칙을 만들어 달라고 건의하기처럼 생활 속에서 바로 실천할 수 있는 방법이 많아요.",
+        "좋은 해결 방안은 정말로 실천할 수 있어야 해요. 이것을 '실현 가능성'이라고 부릅니다.",
+        "나 혼자가 아니라 여러 사람에게 두루 도움이 되는 성질을 '공공성'이라고 해요. 좋은 해결 방안은 공공성이 커요."
+    ],
+    promo: [
+        "문화유산, 자연환경, 특산물, 축제, 인물처럼 우리 지역의 자랑거리를 찾는 것이 홍보의 첫걸음이에요. 이것을 '알릴 거리'라고 해요.",
+        "인터넷 누리집, 홍보 책자, 영상, SNS처럼 지역을 알리는 방법은 아주 다양해요. 여러 매체를 함께 쓰면 더 많은 사람에게 닿는답니다.",
+        "홍보할 때는 '누구에게' 알릴지 먼저 정해야 해요. 알리고 싶은 사람에 따라 잘 닿는 매체가 달라지거든요.",
+        "지역에 전해 오는 재미있는 이야기나 인물의 이야기를 엮어서 알리는 것을 '스토리텔링'이라고 해요.",
+        "지역의 특징이나 옛이야기를 엮어 축제를 열면 사람들의 관심을 훨씬 많이 끌 수 있어요.",
+        "'특산물'은 그 지역에서 특별히 많이 나거나 유명한 물건이에요. 특산물은 훌륭한 알릴 거리가 된답니다.",
+        "지역을 널리 알리면 관광객이 찾아오고 특산물도 많이 팔려요. 이렇게 지역 경제가 살아나는 것을 '지역 경제 활성화'라고 해요.",
+        "짧고 기억하기 쉬운 슬로건은 사람들의 마음에 오래 남아요. 알리고 싶은 사람이 좋아할 낱말을 넣어 보세요."
+    ]
+};
+
+// 단계에 맞는 팁 목록을 꺼낸다 (예전 방식의 한 줄 배열도 그대로 동작)
+window.getLoadingTips = function(part) {
+    const t = window.aiLoadingTips;
+    if (Array.isArray(t)) return t;
+    const key = window.detectLearningPart(part);
+    return (t && t[key] && t[key].length > 0) ? t[key] : (t.problem || []);
+};
 
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -90,21 +137,24 @@ const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 // ==========================================
 window.tipTimers = {};
 
-window.startTipRotation = function(elementId, intervalMs = 10000) {
+// [2026-09-19 교과 연계] part('problem' / 'promo')에 맞는 팁을 보여줍니다.
+window.startTipRotation = function(elementId, intervalMs = 10000, part) {
     window.stopTipRotation(elementId);
     const first = document.getElementById(elementId);
     if (!first) return;
-    let idx = Math.floor(Math.random() * window.aiLoadingTips.length);
-    first.innerText = window.aiLoadingTips[idx];
+    const tips = window.getLoadingTips(part);
+    if (tips.length === 0) return;
+    let idx = Math.floor(Math.random() * tips.length);
+    first.innerText = tips[idx];
     window.tipTimers[elementId] = setInterval(() => {
         const el = document.getElementById(elementId);
         if (!el) { window.stopTipRotation(elementId); return; }
-        idx = (idx + 1) % window.aiLoadingTips.length;
+        idx = (idx + 1) % tips.length;
         el.style.transition = 'opacity 0.25s';
         el.style.opacity = '0';
         setTimeout(() => {
             const el2 = document.getElementById(elementId);
-            if (el2) { el2.innerText = window.aiLoadingTips[idx]; el2.style.opacity = '1'; }
+            if (el2) { el2.innerText = tips[idx]; el2.style.opacity = '1'; }
         }, 250);
     }, intervalMs);
 
@@ -134,7 +184,7 @@ window.buildWaitingBox = function(title, tipElementId) {
         <span id="${tipElementId}-sec" style="margin-left:auto; font-size:13px; font-weight:bold; color:var(--text-muted);">0초</span>
     </div>
     <div style="margin-top:12px; padding:12px 14px; background:#ffffff; border-radius:8px; border:1px dashed var(--border-color);">
-        <div style="font-size:12px; font-weight:bold; color:var(--primary); margin-bottom:6px;">💡 기다리는 동안 알아두면 좋아요</div>
+        <div style="font-size:12px; font-weight:bold; color:var(--primary); margin-bottom:6px;">💡 시장님, 그거 아시나요?</div>
         <div id="${tipElementId}" style="font-size:14px; line-height:1.6; color:var(--text-main);"></div>
     </div>`;
 };
@@ -405,10 +455,12 @@ window.safeGetBase64 = async function(file) {
 // 전체 화면 로딩창 제어 (제출 전용)
 window.aiLoadingStatusTimer = null;
 
-window.showAILoading = function() {
+// [2026-09-19 교과 연계] part를 주지 않으면 알아서 판단합니다.
+//   (홍보 기획안 제출 중이면 'promo', 아니면 'problem')
+window.showAILoading = function(part) {
     const overlay = document.getElementById('aiLoadingOverlay');
     if (overlay) overlay.classList.add('active');
-    window.startTipRotation('aiLoadingTipText', 10000);
+    window.startTipRotation('aiLoadingTipText', 10000, window.detectLearningPart(part));
 
     // 오래 걸리면 상황을 알려준다 (구글 서버가 붐빌 때가 많습니다)
     const status = document.getElementById('aiLoadingStatus');
@@ -457,7 +509,7 @@ window.getAIAdvice = async function() {
     const adviceArea = document.getElementById('aiAdviceArea');
     adviceArea.style.display = 'block';
     adviceArea.innerHTML = window.buildWaitingBox('AI 비서가 자료를 살펴보고 있습니다...', 'adviceTipText');
-    window.startTipRotation('adviceTipText', 10000);
+    window.startTipRotation('adviceTipText', 10000, 'problem');   // [교과 연계] 1단계 팁
 
     try {
         let inlineData = null;
@@ -478,7 +530,7 @@ ${photoFile ? "학생이 직접 찍은 현장 사진이 함께 첨부되어 있�
 
 이 자료를 보고 학생이 '우리 지역의 문제'로 삼을 만한 핵심 주제를 1~2가지 짚어줘.
 - 정답을 바로 알려주지 말고, 학생이 스스로 생각하도록 질문을 섞어줘.
-- 초등학교 4학년이 이해할 수 있는 쉬운 말로, 3문장 이내로 다정하게 써줘.${window.buildLearningBlock()}`;
+- 초등학교 4학년이 이해할 수 있는 쉬운 말로, 3문장 이내로 다정하게 써줘.${window.buildLearningBlock('problem')}`;
 
         const resText = await window.callGeminiAPI(prompt, inlineData, { fast: true });   // 가벼운 조언 → 빠른 모드
         // [2026-09-19 보완] AI 답변을 안전하게 화면에 넣는다 (<, > 등이 화면을 깨뜨리지 않도록)
@@ -568,7 +620,7 @@ window.submitProposal = async function() {
     window.clearAIReviseBox('proposalText');   // 지난번 보완 요청 안내 지우기
 
     window.isAILoading = true;
-    window.showAILoading();
+    window.showAILoading('problem');   // [교과 연계] 1단계 팁
 
     try {
         // 키가 아직 도착하지 않았을 수 있으므로 잠시 기다린다
@@ -592,7 +644,7 @@ window.submitProposal = async function() {
 1) 관련성 - 위에 적힌 문제를 실제로 해결하는 내용인가
 2) 실현 가능성 - 초등학생과 지역 주민이 실제로 해볼 수 있는가
 3) 공공성 - 나 혼자가 아니라 여러 사람에게 도움이 되는가
-4) 구체성 - 누가, 무엇을, 어떻게 하는지 알 수 있게 썼는가${window.buildLearningBlock()}
+4) 구체성 - 누가, 무엇을, 어떻게 하는지 알 수 있게 썼는가${window.buildLearningBlock('problem')}
 
 [반드시 '보완필요'로 판정해야 하는 경우]
 - 위에 적힌 문제와 상관없는 내용이거나, 장난으로 쓴 글일 때
@@ -781,7 +833,7 @@ window.getAIConsulting = async function() {
     const resText = document.getElementById('consultingText');
     resArea.style.display = 'block';
     resText.innerHTML = window.buildWaitingBox('AI 담당관이 기획안을 살펴보고 있습니다...', 'consultingTipText');
-    window.startTipRotation('consultingTipText', 10000);
+    window.startTipRotation('consultingTipText', 10000, 'promo');   // [교과 연계] 2단계 팁
 
     try {
         const prompt = `너는 초등학교 4학년 학생의 지역 홍보 기획을 돕는 친절한 마케팅 전문가 AI야.
@@ -794,7 +846,7 @@ window.getAIConsulting = async function() {
 1) 잘한 점: 홍보물·홍보 대상·슬로건 중에서 특히 잘 생각한 점을 구체적으로 칭찬해줘.
 2) 슬로건 다듬기: 지금 슬로건의 좋은 점을 짚어준 뒤, 홍보 대상의 눈에 더 잘 띄도록 고친 슬로건을 한 가지 제안해줘. 제안하는 슬로건은 따옴표로 감싸서 보여줘.
 3) 매체 추천: 홍보 대상에게 잘 닿을 매체(포스터, 영상, 안내 방송, 학교 게시판 등)를 한 가지 추천하고 이유도 짧게 알려줘.
-초등학교 4학년이 이해할 수 있는 쉬운 말로, 다정하게 4문장 이내로 써줘.${window.buildLearningBlock()}`;
+초등학교 4학년이 이해할 수 있는 쉬운 말로, 다정하게 4문장 이내로 써줘.${window.buildLearningBlock('promo')}`;
 
         const answer = await window.callGeminiAPI(prompt, null, { fast: true });   // 가벼운 조언 → 빠른 모드
         // [2026-09-19 보완] AI 답변을 안전하게 화면에 넣는다
