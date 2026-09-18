@@ -662,6 +662,73 @@ function getEnteredClassCode() {
     if(!region || !d1 || !d2 || !d3 || !d4) return null; return `${region}_${d1}${d2}${d3}${d4}`;
 };
 
+// ==========================================
+// [2026-09-19 로딩 개선] 접속 로딩 화면 제어
+//   · 예전: 데이터가 이미 와 있어도 1~1.5초를 일부러 더 기다렸고,
+//           서버 연결이 끊기면 로딩 화면이 영원히 닫히지 않았습니다.
+//   · 지금: ① 데이터가 도착하는 즉시 닫습니다.
+//           ② 일정 시간(아래 숫자)이 지나도 안 닫히면 '다시 접속하기' 버튼을 보여줍니다.
+// ==========================================
+window.LOADING_WATCHDOG_MS = 12000;   // 이 시간(12초) 안에 접속이 끝나지 않으면 안내 표시
+window.loadingWatchdogTimer = null;
+
+window.showLoadingScreen = function() {
+    const screen = document.getElementById('loadingScreen');
+    if (!screen) return;
+    const stuckBox = document.getElementById('loadingStuckBox');
+    if (stuckBox) stuckBox.remove();
+    screen.style.display = 'flex';
+
+    if (window.loadingWatchdogTimer) clearTimeout(window.loadingWatchdogTimer);
+    window.loadingWatchdogTimer = setTimeout(() => {
+        window.showLoadingStuck("접속이 평소보다 오래 걸리고 있어요.");
+    }, window.LOADING_WATCHDOG_MS);
+};
+
+window.hideLoadingScreen = function() {
+    if (window.loadingWatchdogTimer) { clearTimeout(window.loadingWatchdogTimer); window.loadingWatchdogTimer = null; }
+    const screen = document.getElementById('loadingScreen');
+    if (screen) screen.style.display = 'none';
+    const stuckBox = document.getElementById('loadingStuckBox');
+    if (stuckBox) stuckBox.remove();
+};
+
+// 로딩이 끝나지 않을 때 '다시 접속하기' 버튼을 보여준다
+// ※ 이후에 데이터가 늦게라도 도착하면 hideLoadingScreen()이 알아서 닫아 줍니다.
+window.showLoadingStuck = function(message) {
+    const screen = document.getElementById('loadingScreen');
+    if (!screen || screen.style.display === 'none') return;
+    if (document.getElementById('loadingStuckBox')) return;
+    console.warn("[접속] 로딩이 끝나지 않아 다시 접속 버튼을 표시합니다.", message);
+    const box = document.createElement('div');
+    box.id = 'loadingStuckBox';
+    box.style.cssText = 'margin-top:24px; padding:18px 20px; max-width:360px; width:90%; background:#ffffff;' +
+        'border:1px solid #fde68a; border-radius:12px; box-shadow:0 4px 12px rgba(0,0,0,0.08);';
+    box.innerHTML =
+        '<div style="font-size:15px; font-weight:bold; color:#92400e; margin-bottom:6px;">' + message + '</div>' +
+        '<div style="font-size:13px; color:#475569; line-height:1.6; margin-bottom:14px;">' +
+            '인터넷 연결이 잠깐 끊겼을 수 있어요.<br>아래 버튼을 눌러 다시 접속해주세요.</div>' +
+        '<button onclick="location.reload()" style="width:100%; padding:12px; border:none; border-radius:10px;' +
+        'background:#0284c7; color:#ffffff; font-size:15px; font-weight:bold; cursor:pointer;">🔄 다시 접속하기</button>';
+    screen.appendChild(box);
+};
+
+// 학생: 학급 자료와 내 자료가 '둘 다' 도착하면 곧바로 로딩 화면을 닫는다
+window.tryFinishStudentLoading = function() {
+    if (window.classDataLoaded && window.studentDataLoaded) window.hideLoadingScreen();
+};
+
+// 실시간 연결 자체가 거부된 경우 (권한·할당량 문제 등)
+window.handleSnapshotError = function(where, err) {
+    console.error(`[접속] ${where} 불러오기 실패:`, err);
+    const code = String((err && err.code) || '');
+    if (code.includes('resource-exhausted')) {
+        window.showLoadingStuck("오늘 데이터베이스 사용량을 모두 썼어요. 선생님께 알려주세요.");
+    } else {
+        window.showLoadingStuck("학급 정보를 불러오지 못했어요.");
+    }
+};
+
 window.initSystem = async function(isTeacherModeParam = false) {
     window.isTeacherMode = isTeacherModeParam;
     
@@ -681,7 +748,7 @@ window.initSystem = async function(isTeacherModeParam = false) {
         loadingTipElement.parentElement.style.display = 'block'; 
         loadingTipElement.innerText = tips[Math.floor(Math.random() * tips.length)];
     }
-    document.getElementById('loadingScreen').style.display = 'flex';
+    window.showLoadingScreen();   // [로딩 개선] 안전장치(12초)와 함께 표시
 
     let fullCode = getEnteredClassCode();
     const n = document.getElementById('numInput').value;
@@ -690,12 +757,12 @@ window.initSystem = async function(isTeacherModeParam = false) {
 
     if(!window.isTeacherMode) {
         if(!fullCode) { 
-            document.getElementById('loadingScreen').style.display = 'none'; 
+            window.hideLoadingScreen(); 
             window.showNotification("지역과 학급코드 숫자 4자리를 모두 입력해주세요."); 
             return setTimeout(() => location.reload(), 1500); 
         }
         if(!n) { 
-            document.getElementById('loadingScreen').style.display = 'none'; 
+            window.hideLoadingScreen(); 
             window.showNotification("나의 번호를 입력해주세요."); 
             return setTimeout(() => location.reload(), 1500); 
         }
@@ -708,12 +775,12 @@ window.initSystem = async function(isTeacherModeParam = false) {
             try { 
                 const classSnap = await getDoc(doc(db, "classes", fullCode)); 
                 if (!classSnap.exists()) { 
-                    document.getElementById('loadingScreen').style.display = 'none'; 
+                    window.hideLoadingScreen(); 
                     window.showNotification("해당 학급 코드가 존재하지 않습니다."); 
                     return setTimeout(() => location.reload(), 1500); 
                 } 
             } catch(e) { 
-                document.getElementById('loadingScreen').style.display = 'none'; 
+                window.hideLoadingScreen(); 
                 window.showNotification("데이터베이스 연결 실패."); 
                 return setTimeout(() => location.reload(), 1500); 
             }
@@ -727,7 +794,7 @@ window.initSystem = async function(isTeacherModeParam = false) {
                     const stillFresh = (Date.now() - lastSeen) < window.PRESENCE_TIMEOUT_MS;   // 10분 (위 설정값)
                     const otherDevice = sData.deviceId && sData.deviceId !== window.getDeviceId();
                     if (sData.isOnline === true && stillFresh && otherDevice) {
-                        document.getElementById('loadingScreen').style.display = 'none';
+                        window.hideLoadingScreen();
                         window.showNotification(`${n}번은 지금 다른 친구가 사용 중이에요. 다른 번호로 접속해주세요. (잠시 뒤 자동으로 풀립니다)`);
                         return setTimeout(() => location.reload(), 3000);
                     }
@@ -754,12 +821,12 @@ window.initSystem = async function(isTeacherModeParam = false) {
                 try {
                     const classSnap = await getDoc(doc(db, "classes", fullCode));
                     if (!classSnap.exists()) { 
-                        document.getElementById('loadingScreen').style.display = 'none'; 
+                        window.hideLoadingScreen(); 
                         window.showNotification("입력하신 학급 코드가 존재하지 않습니다."); 
                         return setTimeout(() => location.reload(), 1500); 
                     }
                 } catch(e) { 
-                    document.getElementById('loadingScreen').style.display = 'none'; 
+                    window.hideLoadingScreen(); 
                     window.showNotification("데이터베이스 연결 실패."); 
                     return setTimeout(() => location.reload(), 1500); 
                 }
@@ -898,7 +965,10 @@ window.initSystem = async function(isTeacherModeParam = false) {
                     window.initialMapCenterSet = true; 
                 }
             }
-        });
+
+            // [로딩 개선] 학생은 내 자료까지 도착했으면 바로 로딩 화면을 닫는다
+            if (!window.isTeacherMode) window.tryFinishStudentLoading();
+        }, (err) => window.handleSnapshotError('학급 자료', err));   // [로딩 개선] 연결 실패 시 안내
 
         if(!window.isTeacherMode) {
             onSnapshot(doc(db, "classes", window.classKey, "students", window.userKey), (docSnap) => {
@@ -965,9 +1035,10 @@ window.initSystem = async function(isTeacherModeParam = false) {
                 
                 window.updateUI(true);
                 window.startHeartbeat();
-                window.startIdleWatch();        // [추가] 무활동 감시 시작
-                setTimeout(() => { document.getElementById('loadingScreen').style.display = 'none'; }, 1500);
-            });
+                window.startIdleWatch();        // 무활동 감시 시작
+                // [로딩 개선] 예전: 1.5초를 일부러 기다린 뒤 닫음 → 지금: 준비되면 바로 닫음
+                window.tryFinishStudentLoading();
+            }, (err) => window.handleSnapshotError('내 자료', err));   // [로딩 개선] 연결 실패 시 안내
         } else {
             // 접속 상태는 별도 컬렉션에서 가져온다
             window.presenceData = {};
@@ -975,15 +1046,15 @@ window.initSystem = async function(isTeacherModeParam = false) {
                 window.presenceData = {};
                 snap.forEach((d) => { window.presenceData[d.id] = d.data(); });
                 try { window.renderStudentMonitor(); } catch(e) {}
-            });
+            }, (err) => console.error("[접속] 접속 현황 불러오기 실패:", err));
 
             onSnapshot(collection(db, "classes", window.classKey, "students"), (snapshot) => {
                 window.allStudentsData = {}; snapshot.forEach((doc) => { window.allStudentsData[doc.id] = doc.data(); }); window.renderStudentMonitor();
                 if(document.getElementById('monitorDetailView').style.display === 'block') { const currentlyViewingNum = document.getElementById('dtNum').innerText; if(currentlyViewingNum) window.showStudentDetails(currentlyViewingNum); }
-                setTimeout(() => { document.getElementById('loadingScreen').style.display = 'none'; }, 1000);
-            });
+                window.hideLoadingScreen();   // [로딩 개선] 예전: 1초 대기 → 지금: 바로 닫음
+            }, (err) => window.handleSnapshotError('학생 목록', err));   // [로딩 개선]
         }
-    } else { setTimeout(() => { document.getElementById('loadingScreen').style.display = 'none'; }, 1000); }
+    } else { window.hideLoadingScreen(); }   // [로딩 개선] 예전: 1초 대기 → 지금: 바로 닫음
 };
 
 // ★ 탭을 오갈 때마다 저장하지 않도록 상태를 기억한다

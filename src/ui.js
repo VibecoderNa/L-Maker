@@ -827,13 +827,10 @@ window.executeCampaign = async function() {
         window.renderSharedMarketingBoard();
         window.clearAIReviseBox('promoContentInput');   // [추가] 보완 요청 안내 정리
 
-        document.getElementById('campaignResultArea').style.display = 'block';
-        document.getElementById('campaignFeedback').innerHTML = `
-            <div style="font-size:18px; margin-bottom:10px;"><strong>🤝 기획안을 제출했습니다!</strong></div>
-            "${window.escapeHtml(mediaName)}" 매체를 활용한 전략이 접수되었습니다.<br>
-            🤖 <strong>AI 담당관</strong>의 1차 검토를 마치고 👨‍🏫 <strong>선생님</strong>께 전달되었어요. 승인을 기다려주세요!<br>
-            <span style="font-size:13px; color:var(--text-muted);">💰 광고비 ${cost}G가 사용되었습니다. 선생님이 재검토를 요청하시면 광고비는 예산으로 돌아옵니다.</span>
-        `;
+        // [2026-09-19 변경] 제출 후 바로 '나의 홍보 관리'로 이동하므로 결과 상자는 띄우지 않습니다.
+        //   (예전에 켜진 상자가 남아 있을 수 있어 확실히 숨깁니다)
+        const resultArea = document.getElementById('campaignResultArea');
+        if (resultArea) resultArea.style.display = 'none';
 
         const myTab = document.querySelectorAll('#stage2-1 .sub-tab-btn')[2];
         if (myTab) window.switchInnerTab('inner-my-campaign', myTab);
