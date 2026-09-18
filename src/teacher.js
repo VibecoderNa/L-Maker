@@ -387,6 +387,7 @@ window.showStudentDetails = function(sNum, force = false) {
                         <strong style="color:var(--primary); font-size:14px; display:block; margin-bottom:5px;">👨‍🏫 마케팅 전략 승인 (최종 성과 산정)</strong>
                         ${(c.aiVerdict === 'revise') ? `<div style="background:#fef3c7; border:1px solid #fde68a; color:#92400e; padding:10px; border-radius:6px; font-size:13px; font-weight:bold; margin-bottom:10px; line-height:1.6;">⚠️ AI 담당관은 이 기획안을 <u>보완 필요</u>로 판정했습니다. (학생이 안내를 보고도 제출을 선택함)<br>내용을 확인하신 뒤 <strong>재검토</strong>로 돌려보내거나, 필요하면 성과를 직접 정해 승인해주세요.</div>` : ''}
                         <div style="font-size:13px; color:var(--text-muted); margin-bottom:10px;">🤖 AI 담당관이 기획안을 검토하고 제안한 예상 성과입니다. 선생님께서 조정하여 최종 확정해주세요. 승인하시면 학생에게 성과가 지급되고, AI 의견과 선생님 코멘트가 함께 공개됩니다.</div>
+                        <div style="font-size:13px; background:#eff6ff; border:1px solid #bfdbfe; color:#1e40af; padding:10px; border-radius:6px; margin-bottom:10px; line-height:1.6;">💰 이 기획안에는 광고비 <strong>${c.cost || 0}G</strong>가 이미 사용되었습니다. <strong>재검토</strong>로 돌려보내시면 광고비가 학생 예산으로 <strong>자동 환급</strong>되고, <strong>승인</strong>하시면 그대로 집행됩니다.</div>
                         <div style="display:flex; gap:10px; align-items:center; margin-bottom: 10px; background:#f8fafc; padding:10px; border-radius:6px; border:1px solid var(--border-color);">
                             <div><strong>👥 방문객:</strong> <input type="number" id="c-vis-${c.id}" value="${c.expectedVisitor || 0}" style="width:70px; padding:5px; border-radius:4px; border:1px solid #cbd5e1;"> 명</div>
                             <div><strong>⭐ 평판:</strong> <input type="number" id="c-rep-${c.id}" value="${c.expectedReputation || 0}" style="width:70px; padding:5px; border-radius:4px; border:1px solid #cbd5e1;"> 점</div>
@@ -593,6 +594,12 @@ window.submitCampaignReview = async function(campaignId, isApproved, sNum) {
     }
     const feedbackText = typedC || '멋진 마케팅 전략입니다! 예산이 성공적으로 집행되었습니다.';
 
+    // [2026-09-19 추가] 재검토(반려)로 돌려보내면 학생이 낸 광고비를 환급합니다.
+    //   이미 환급한 기획안은 costRefunded가 true라서 두 번 돌려주지 않습니다.
+    const refundCost = (!isApproved && targetCampaign.costRefunded !== true)
+        ? (targetCampaign.cost || 0)
+        : 0;
+
     let finalVis = targetCampaign.expectedVisitor || 0;
     let finalRep = targetCampaign.expectedReputation || 0;
 
@@ -605,9 +612,29 @@ window.submitCampaignReview = async function(campaignId, isApproved, sNum) {
             { title: '✅ 홍보 전략을 승인할까요?', okText: '승인하기', cancelText: '조금 더 볼게요' });
         if (!ok) return;
     } else {
-        const ok = await window.uiConfirm("재검토(반려)로 처리합니다.\n학생이 선생님 코멘트를 보고 보완해 다시 제출할 수 있습니다.",
+        const refundMsg = refundCost > 0
+            ? `\n\n💰 학생에게 광고비 ${refundCost}G를 돌려줍니다.`
+            : '';
+        const ok = await window.uiConfirm("재검토(반려)로 처리합니다.\n학생이 선생님 코멘트를 보고 보완해 다시 제출할 수 있습니다." + refundMsg,
             { title: '↩️ 재검토를 요청할까요?', okText: '재검토 요청', cancelText: '취소', danger: true });
         if (!ok) return;
+    }
+
+    // [2026-09-19 추가] 광고비 환급을 '상태를 바꾸기 전에' 먼저 처리합니다.
+    //   환급에 실패했는데 상태만 반려로 바뀌면 다시 시도할 수 없기 때문입니다.
+    if (refundCost > 0) {
+        try {
+            const refundStudentKey = targetCampaign.authorKey;
+            if (refundStudentKey) {
+                await setDoc(doc(db, "classes", window.classKey, "students", refundStudentKey),
+                    { budget: window.fsIncrement(refundCost) }, { merge: true });
+                targetCampaign.costRefunded = true;
+            }
+        } catch (e) {
+            console.error("광고비 환급 오류", e);
+            alert("광고비 환급에 실패했습니다. 인터넷 상태를 확인하고 다시 시도해주세요.");
+            return;
+        }
     }
 
     targetCampaign.status = isApproved ? 'approved' : 'rejected';
@@ -644,7 +671,9 @@ window.submitCampaignReview = async function(campaignId, isApproved, sNum) {
 
     window.showNotification(isApproved
         ? "마케팅 전략이 승인되어 방문객과 평판이 지급되었습니다."
-        : "재검토(반려) 처리되었습니다.");
+        : (refundCost > 0
+            ? `재검토(반려) 처리되었습니다. 광고비 ${refundCost}G를 학생에게 돌려주었습니다.`
+            : "재검토(반려) 처리되었습니다."));
 
     window.showStudentDetails(sNum, true);
     window.renderStudentMonitor();

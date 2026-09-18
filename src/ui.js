@@ -517,7 +517,12 @@ window.renderMyCampaigns = function() {
                         ${v.teacherFeedback ? `<br><strong>👨‍🏫 선생님 코멘트:</strong> ${window.textToHtml(v.teacherFeedback)}` : ''}
                     </div>`;
                 } else if (v.teacherFeedback) {
-                    vFeedback += `<div style="font-size:14px; background:#fef2f2; padding:12px; border-radius:8px; color:#991b1b; border:1px solid #fca5a5; margin-top:10px;"><strong>👨‍🏫 선생님 코멘트:</strong> ${window.textToHtml(v.teacherFeedback)}<br><span style="font-size:12px;">다시 제출해도 광고비는 한 번만 사용됩니다.</span></div>`;
+                    // [2026-09-19 변경] 재검토(반려)되면 광고비가 예산으로 되돌아옵니다.
+                    //   환급 기능이 생기기 전에 반려된 옛 기획안은 예전 안내를 그대로 보여줍니다.
+                    const refundMsg = (c.costRefunded === true)
+                        ? `💰 광고비 ${v.cost || c.cost || 0}G가 예산으로 돌아왔습니다. 다시 제출하면 광고비가 새로 사용됩니다.`
+                        : `다시 제출해도 광고비는 한 번만 사용됩니다.`;
+                    vFeedback += `<div style="font-size:14px; background:#fef2f2; padding:12px; border-radius:8px; color:#991b1b; border:1px solid #fca5a5; margin-top:10px;"><strong>👨‍🏫 선생님 코멘트:</strong> ${window.textToHtml(v.teacherFeedback)}<br><span style="font-size:12px;">${refundMsg}</span></div>`;
                 }
             }
 
@@ -617,11 +622,23 @@ window.executeCampaign = async function() {
         cost = parseInt(radio.value, 10);
     }
 
-    // ③ 예산 확인 (다시 제출하는 경우 이전 광고비는 돌려준다)
+    // ③ 예산 확인
+    // [2026-09-19 변경] 광고비는 '예약(보류)' 방식으로 처리합니다.
+    //   · 제출할 때 광고비를 차감해 예산을 미리 잡아둡니다.
+    //   · 선생님이 재검토(반려)하시면 그 자리에서 곧바로 돌려드립니다. (teacher.js)
+    //   · 그래서 다시 제출할 때는 원칙적으로 돌려줄 광고비가 남아 있지 않습니다.
+    //   ※ 예전 버전에서는 '고쳐 쓰는 중'이라는 표시가 남아 있으면 엉뚱한 기획안의
+    //     광고비까지 돌려주어 예산이 늘어나는 문제가 있었습니다. 아래에서 막습니다.
     let refund = 0;
     if (window.currentEditingCampaignId) {
         const existing = window.gameState.marketingCampaigns.find(x => x.id === window.currentEditingCampaignId);
-        if (existing) refund = existing.cost || 0;
+        if (!existing || existing.status !== 'rejected') {
+            // 고쳐 쓰던 기획안이 사라졌거나 이미 처리된 경우 → 새 기획안으로 취급
+            window.currentEditingCampaignId = null;
+        } else if (existing.costRefunded !== true) {
+            // 환급 기능이 생기기 전에 반려된 옛 기획안만 한 번 돌려준다
+            refund = existing.cost || 0;
+        }
     }
     if (window.gameState.budget + refund < cost) {
         return window.showNotification(`예산이 부족합니다! (사용 가능 예산: ${window.gameState.budget + refund}G / 필요 예산: ${cost}G)`);
@@ -776,6 +793,7 @@ window.executeCampaign = async function() {
                 c.round = newVersion.round;
                 c.submittedAt = today;
                 c.rewardPaid = c.rewardPaid || false;
+                c.costRefunded = false;                            // [추가] 광고비를 새로 냈으므로 환급 표시 해제
 
                 window.gameState.marketingCampaigns.unshift(c);
                 window.showNotification(`${newVersion.round}차 홍보 전략을 제출했습니다! 선생님의 심사를 기다려주세요.`);
@@ -797,6 +815,7 @@ window.executeCampaign = async function() {
                 round: 1,
                 submittedAt: today,
                 rewardPaid: false,
+                costRefunded: false,                                   // [추가] 광고비 환급 여부
                 likes: 0, likedBy: [],
                 versions: [newVersion]
             });
@@ -812,7 +831,8 @@ window.executeCampaign = async function() {
         document.getElementById('campaignFeedback').innerHTML = `
             <div style="font-size:18px; margin-bottom:10px;"><strong>🤝 기획안을 제출했습니다!</strong></div>
             "${window.escapeHtml(mediaName)}" 매체를 활용한 전략이 접수되었습니다.<br>
-            🤖 <strong>AI 담당관</strong>의 1차 검토를 마치고 👨‍🏫 <strong>선생님</strong>께 전달되었어요. 승인을 기다려주세요!
+            🤖 <strong>AI 담당관</strong>의 1차 검토를 마치고 👨‍🏫 <strong>선생님</strong>께 전달되었어요. 승인을 기다려주세요!<br>
+            <span style="font-size:13px; color:var(--text-muted);">💰 광고비 ${cost}G가 사용되었습니다. 선생님이 재검토를 요청하시면 광고비는 예산으로 돌아옵니다.</span>
         `;
 
         const myTab = document.querySelectorAll('#stage2-1 .sub-tab-btn')[2];

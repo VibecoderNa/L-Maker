@@ -78,6 +78,15 @@ window.presenceRef = function(num) {
     return doc(db, "classes", window.classKey, "presence", String(num));
 };
 
+// ==========================================
+// [2026-09-19 추가] 접속·자동 로그아웃 시간 설정
+//   ※ 아래 숫자만 바꾸면 시간이 바뀝니다. (1000 = 1초)
+// ==========================================
+window.HEARTBEAT_MS        = 5 * 60 * 1000;   // 접속 신호를 보내는 주기 (5분)
+window.PRESENCE_TIMEOUT_MS = 10 * 60 * 1000;  // 오프라인 판정 · 중복 접속 차단 (10분)
+window.IDLE_WARN_MS        = 8 * 60 * 1000;   // 무활동 8분 → 경고창 (2분 남음)
+window.IDLE_LOGOUT_MS      = 10 * 60 * 1000;  // 무활동 10분 → 자동 로그아웃
+
 window.startHeartbeat = function() {
     if (window.heartbeatTimer) clearInterval(window.heartbeatTimer);
     const beat = () => {
@@ -87,9 +96,125 @@ window.startHeartbeat = function() {
             .catch(() => {});
     };
     beat();
-    // 5분 간격으로 줄여 데이터베이스 사용량을 아낍니다
-    window.heartbeatTimer = setInterval(beat, 300000);
+    // 신호 주기를 길게 잡아 데이터베이스 사용량을 아낍니다
+    window.heartbeatTimer = setInterval(beat, window.HEARTBEAT_MS);
 };
+
+// ==========================================
+// [2026-09-19 추가] 무활동(유휴) 자동 로그아웃
+//   브라우저를 그냥 닫으면 "나 나갔어요" 신호가 끝까지 전달되지 않는 경우가 많습니다.
+//   그래서 ① 일정 시간 움직임이 없으면 스스로 로그아웃하고,
+//         ② 그래도 못 보낸 경우에는 마지막 신호 시각으로 오프라인을 판정합니다.
+// ==========================================
+window.lastActivityAt  = Date.now();
+window.idleTimer       = null;
+window.idleWarnShown   = false;
+window.idleWatchStarted = false;
+window.autoLoggingOut  = false;
+
+// 학생이 움직였다는 표시 (마우스·키보드·터치·스크롤)
+window.markActivity = function() {
+    window.lastActivityAt = Date.now();
+    if (window.idleWarnShown) {
+        window.idleWarnShown = false;
+        window.hideIdleWarning();
+    }
+};
+
+window.startIdleWatch = function() {
+    if (window.isTeacherMode) return;          // 선생님 화면은 자동 로그아웃하지 않습니다
+    if (window.idleWatchStarted) return;       // 두 번 켜지지 않도록 막습니다
+    window.idleWatchStarted = true;
+    window.lastActivityAt = Date.now();
+
+    ['mousemove', 'mousedown', 'keydown', 'touchstart', 'scroll', 'wheel', 'click', 'input']
+        .forEach(ev => window.addEventListener(ev, window.markActivity, { passive: true }));
+
+    window.idleTimer = setInterval(window.checkIdle, 1000);   // 1초마다 확인 (통신 없음)
+};
+
+window.checkIdle = function() {
+    if (window.isTeacherMode || !window.classKey || !window.userKey) return;
+    if (window.autoLoggingOut) return;
+
+    const idle = Date.now() - window.lastActivityAt;
+
+    if (idle >= window.IDLE_LOGOUT_MS) { window.autoLogout(); return; }
+
+    if (idle >= window.IDLE_WARN_MS) {
+        if (!window.idleWarnShown) window.showIdleWarning();
+        window.updateIdleCountdown(window.IDLE_LOGOUT_MS - idle);
+    }
+};
+
+window.showIdleWarning = function() {
+    window.idleWarnShown = true;
+    let el = document.getElementById('idleWarnOverlay');
+    if (!el) {
+        el = document.createElement('div');
+        el.id = 'idleWarnOverlay';
+        el.style.cssText = 'position:fixed; inset:0; z-index:11500; background:rgba(15,23,42,0.6);' +
+            'display:flex; align-items:center; justify-content:center; padding:20px;';
+        el.innerHTML =
+            '<div style="background:#ffffff; border-radius:16px; padding:28px 24px; max-width:380px;' +
+            'width:100%; text-align:center; box-shadow:0 10px 40px rgba(0,0,0,0.25);">' +
+                '<div style="font-size:40px; margin-bottom:8px;">⏰</div>' +
+                '<div style="font-size:20px; font-weight:bold; color:#1e293b; margin-bottom:10px;">시장님, 아직 계신가요?</div>' +
+                '<div style="font-size:14px; color:#475569; line-height:1.7; margin-bottom:14px;">' +
+                    '한동안 움직임이 없어서 곧 자동으로 로그아웃됩니다.<br>계속하시려면 아래 버튼을 눌러주세요.' +
+                '</div>' +
+                '<div id="idleCountdown" style="font-size:22px; font-weight:bold; color:#ef4444; margin-bottom:18px;">2분 0초</div>' +
+                '<button onclick="window.markActivity()" style="width:100%; padding:12px; border:none; border-radius:10px;' +
+                'background:#0284c7; color:#ffffff; font-size:16px; font-weight:bold; cursor:pointer;">계속 할래요</button>' +
+            '</div>';
+        document.body.appendChild(el);
+    }
+    el.style.display = 'flex';
+};
+
+window.updateIdleCountdown = function(msLeft) {
+    const box = document.getElementById('idleCountdown');
+    if (!box) return;
+    const total = Math.max(0, Math.floor(msLeft / 1000));
+    const m = Math.floor(total / 60);
+    const s = total % 60;
+    box.innerText = m > 0 ? `${m}분 ${s}초` : `${s}초`;
+};
+
+window.hideIdleWarning = function() {
+    const el = document.getElementById('idleWarnOverlay');
+    if (el) el.style.display = 'none';
+};
+
+window.autoLogout = async function() {
+    if (window.autoLoggingOut) return;
+    window.autoLoggingOut = true;
+
+    if (window.idleTimer)      { clearInterval(window.idleTimer);      window.idleTimer = null; }
+    if (window.heartbeatTimer) { clearInterval(window.heartbeatTimer); window.heartbeatTimer = null; }
+    window.hideIdleWarning();
+    window.showLogoutOverlay('한동안 사용하지 않아 자동으로 로그아웃합니다…');
+
+    try {
+        await Promise.race([
+            setDoc(window.presenceRef(window.userKey), { isOnline: false, lastSeen: 0 }, { merge: true }),
+            new Promise(resolve => setTimeout(resolve, 2000))
+        ]);
+    } catch (err) { console.error("자동 로그아웃 오류:", err); }
+
+    window.safeSetItem('lm_auto_logout', '1');
+    location.reload();
+};
+
+// 자동 로그아웃으로 새로고침된 경우, 로그인 화면에서 이유를 알려준다
+setTimeout(() => {
+    if (window.safeGetItem('lm_auto_logout') === '1') {
+        window.safeSetItem('lm_auto_logout', '0');
+        if (window.showNotification) {
+            window.showNotification("한동안 사용하지 않아 자동으로 로그아웃되었습니다. 다시 접속해주세요.");
+        }
+    }
+}, 1500);
 
 window.getTodayStr = function() { const d = new Date(); const offset = d.getTimezoneOffset() * 60000; const kstTime = new Date(d.getTime() - offset + (9 * 60 * 60000)); return kstTime.toISOString().split('T')[0]; }
 window.safeGetItem = function(key) { try { return localStorage.getItem(key); } catch(e) { return null; } }
@@ -120,7 +245,8 @@ window.toggleLogoutMenu = function(e) { const menu = document.getElementById('lo
 //          아무 설명이 없어서 "화면이 뿌옇게 흐려지는" 오류처럼 보였습니다.
 //  - 지금: 안내 문구가 있는 덮개를 씌워 처리 중임을 분명히 알려줍니다.
 // ==========================================
-window.showLogoutOverlay = function() {
+window.showLogoutOverlay = function(message) {
+    const text = message || '안전하게 로그아웃하고 있어요…';
     if (document.getElementById('logoutOverlay')) return;
     const el = document.createElement('div');
     el.id = 'logoutOverlay';
@@ -128,7 +254,7 @@ window.showLogoutOverlay = function() {
         'color:#ffffff; display:flex; flex-direction:column; align-items:center; justify-content:center;' +
         'gap:14px; font-weight:bold; font-size:17px; text-align:center; padding:20px;';
     el.innerHTML = '<i class="fa-solid fa-spinner fa-spin" style="font-size:30px;"></i>' +
-        '<div>안전하게 로그아웃하고 있어요…</div>';
+        '<div>' + text + '</div>';
     document.body.appendChild(el);
 };
 
@@ -587,7 +713,7 @@ window.initSystem = async function(isTeacherModeParam = false) {
                 if (sSnap.exists()) {
                     const sData = sSnap.data();
                     const lastSeen = sData.lastSeen || 0;
-                    const stillFresh = (Date.now() - lastSeen) < 12 * 60 * 1000;   // 12분
+                    const stillFresh = (Date.now() - lastSeen) < window.PRESENCE_TIMEOUT_MS;   // 10분 (위 설정값)
                     const otherDevice = sData.deviceId && sData.deviceId !== window.getDeviceId();
                     if (sData.isOnline === true && stillFresh && otherDevice) {
                         document.getElementById('loadingScreen').style.display = 'none';
@@ -828,6 +954,7 @@ window.initSystem = async function(isTeacherModeParam = false) {
                 
                 window.updateUI(true);
                 window.startHeartbeat();
+                window.startIdleWatch();        // [추가] 무활동 감시 시작
                 setTimeout(() => { document.getElementById('loadingScreen').style.display = 'none'; }, 1500);
             });
         } else {
