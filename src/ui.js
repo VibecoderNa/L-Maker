@@ -97,6 +97,7 @@ window.getProposalVersions = function(p) {
         proposal: p.proposal || '',
         aiFeedback: p.aiFeedback || '',
         aiBudget: p.aiBudget || 0,
+        aiVerdict: p.aiVerdict || '',        // [추가]
         teacherFeedback: p.teacherFeedback || '',
         teacherBudget: p.teacherBudget || 0,
         status: p.status || 'waiting',
@@ -116,6 +117,7 @@ window.getCampaignVersions = function(c) {
         cost: c.cost || 0,
         content: c.content || '',
         aiFeedback: c.aiFeedback || '',
+        aiVerdict: c.aiVerdict || '',        // [추가]
         expectedVisitor: c.expectedVisitor || 0,
         expectedReputation: c.expectedReputation || 0,
         teacherFeedback: c.teacherFeedback || '',
@@ -625,6 +627,8 @@ window.executeCampaign = async function() {
         return window.showNotification(`예산이 부족합니다! (사용 가능 예산: ${window.gameState.budget + refund}G / 필요 예산: ${cost}G)`);
     }
 
+    window.clearAIReviseBox('promoContentInput');   // [추가] 지난번 보완 요청 안내 지우기
+
     window.isCampaignSubmitting = true;
     const submitBtn = document.getElementById('btn-campaign');
     const originalBtnHtml = submitBtn ? submitBtn.innerHTML : '';
@@ -649,8 +653,10 @@ window.executeCampaign = async function() {
         const repMin = Math.max(1, Math.floor(cost / 40));
         const repMax = Math.max(repMin + 1, Math.floor(cost / 10));
 
-        const prompt = `너는 초등학교 4학년 학생의 지역 홍보 기획을 1차로 검토하는 따뜻한 AI 홍보 담당관이야.
+        // ── [2026-09-19 변경] 판정(적합/보완필요)을 요구하는 프롬프트 ──
+        const prompt = `너는 초등학교 4학년 학생이 낸 '지역 홍보 기획안'을 1차로 검토하는 AI 홍보 담당관이야.
 최종 심사는 선생님이 하시고, 너는 선생님께 전달할 1차 의견과 예상 성과를 쓰는 역할이야.
+무조건 칭찬만 하면 안 돼. 기준에 맞지 않으면 분명하게 '보완필요'로 판정해야 해.
 
 홍보할 거리(홍보물): ${topic}
 홍보 대상(누구에게): ${target}
@@ -658,30 +664,66 @@ window.executeCampaign = async function() {
 선택한 광고 매체: ${mediaName} (${cost}G)
 상세 기획안: ${content}
 
-검토 기준: 1) 홍보 대상에게 잘 닿는 매체와 내용인가
-          2) 슬로건과 기획안이 홍보물의 매력을 잘 드러내는가
-          3) 초등학생이 실제로 해볼 수 있는 기획인가
+[평가 기준]
+1) 홍보 대상에게 잘 닿는 매체와 내용인가
+2) 슬로건과 기획안이 홍보물의 매력을 잘 드러내는가
+3) 초등학생이 실제로 해볼 수 있는 기획인가
+4) 무엇을 어떻게 만들고 어디에 알릴지 구체적으로 썼는가
 
-첫 번째 줄에는 다른 말 없이 "방문객수,평판점수" 형식으로 숫자 두 개만 적어줘. (예: 250,12)
-방문객수는 ${visMin}부터 ${visMax} 사이, 평판점수는 ${repMin}부터 ${repMax} 사이의 정수여야 해.
-기획이 대상과 잘 맞고 구체적일수록 높은 숫자를, 막연하거나 짧으면 낮은 숫자를 줘.
-두 번째 줄부터는 학생에게 전할 의견을 써줘. 칭찬을 먼저 하고, 더 좋아질 점을 한 가지 덧붙여줘.
-초등학교 4학년이 읽을 수 있는 쉬운 말로 3문장 이내로 써줘.`;
+[반드시 '보완필요'로 판정해야 하는 경우]
+- 홍보물·홍보 대상과 상관없는 내용이거나, 장난으로 쓴 글일 때
+- 뜻을 알 수 없는 글자나 같은 말의 반복일 때
+- "많이 알리자"처럼 방법 없이 다짐만 있을 때
+- 사실이 아닌 내용으로 사람들을 속이는 홍보일 때
+- 초등학생이 도저히 할 수 없는 방법일 때 (예: 전국 TV 광고 직접 제작, 연예인 섭외)
+
+[출력 형식] 반드시 이대로 지켜줘.
+첫 번째 줄에는 "판정|방문객수,평판점수" 형식으로만 적어. 다른 말은 절대 쓰지 마.
+ - 기준에 맞으면:      적합|(방문객수는 ${visMin}부터 ${visMax}, 평판점수는 ${repMin}부터 ${repMax} 사이의 정수)
+   기획이 대상과 잘 맞고 구체적일수록 높은 숫자를, 막연하거나 짧으면 낮은 숫자를 줘.
+ - 기준에 맞지 않으면: 보완필요|0,0
+두 번째 줄부터는 학생에게 전할 의견을 써줘.
+ - '적합'일 때: 잘한 점을 먼저 칭찬하고, 더 좋아질 점 한 가지를 덧붙여줘.
+ - '보완필요'일 때: 노력한 점을 짧게 인정한 뒤, 어떤 기준에 맞지 않았는지 알려주고,
+   어떻게 고쳐 쓰면 좋을지 구체적인 방법을 두 가지 알려줘. 마지막에 다시 써보자고 응원해줘.
+초등학교 4학년이 읽을 수 있는 쉬운 말로, 4문장 이내로 써줘.`;
 
         const resText = await window.callGeminiAPI(prompt);
 
+        // ── [2026-09-19 변경] AI의 판정과 예상 성과를 읽어낸다 ──
         const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
-        const lines = resText.split('\n');
-        let expectedVis = Math.floor(cost * 1.0);
-        let expectedRep = Math.floor(cost / 20);
-        let aiFeedback = resText.trim();
+        const parsedHead = window.splitAIHead(resText);
+        let aiVerdict = window.detectAIVerdict(parsedHead.head);
+        let aiFeedback = parsedHead.body || resText.trim();
 
-        const numMatch = String(lines[0]).match(/(\d+)\D+(\d+)/);
-        if (numMatch) {
-            expectedVis = clamp(parseInt(numMatch[1], 10), visMin, visMax);
-            expectedRep = clamp(parseInt(numMatch[2], 10), repMin, repMax);
-            const rest = lines.slice(1).join('\n').trim();
-            if (rest) aiFeedback = rest;
+        const numMatch = String(parsedHead.head).match(/(\d+)\D+(\d+)/);
+
+        if (aiVerdict === null) {
+            // AI가 형식을 지키지 않은 경우: 예전 방식대로 '적합'으로 보고, 전체를 의견으로 사용
+            aiVerdict = 'ok';
+            if (!numMatch) aiFeedback = resText.trim();
+        }
+
+        let expectedVis = 0;
+        let expectedRep = 0;
+        if (aiVerdict === 'ok') {
+            expectedVis = numMatch ? clamp(parseInt(numMatch[1], 10), visMin, visMax) : Math.floor(cost * 1.0);
+            expectedRep = numMatch ? clamp(parseInt(numMatch[2], 10), repMin, repMax) : Math.floor(cost / 20);
+        }
+
+        // ── [2026-09-19 추가] 보완 필요 → 제출하지 않고 바로 고칠 기회를 준다 ──
+        //     이 경우 광고비도 빠지지 않습니다. (예산 차감은 아래 ⑤에서 일어납니다)
+        if (aiVerdict === 'revise') {
+            window.hideAILoading();
+            window.showAIReviseBox('promoContentInput', aiFeedback);
+            const goAnyway = await window.uiConfirm(
+                aiFeedback + "\n\n─────────────\n고쳐서 다시 내면 더 좋은 성과를 받을 수 있어요.\n그래도 지금 그대로 내고 싶다면 오른쪽 버튼을 눌러주세요.",
+                { title: '🤖 AI 담당관: 조금만 더 보완해봐요', okText: '그래도 제출할래요', cancelText: '고쳐서 다시 쓸게요' }
+            );
+            if (!goAnyway) {
+                window.showNotification("AI 담당관의 의견을 참고해 기획안을 고쳐서 다시 제출해주세요.");
+                return;   // 제출하지 않음 (예산 차감·기록 변화 없음)
+            }
         }
 
         // ⑤ 저장
@@ -705,6 +747,7 @@ window.executeCampaign = async function() {
             topic: topic, target: target, slogan: slogan,
             media: mediaName, cost: cost, content: content,
             aiFeedback: aiFeedback,
+            aiVerdict: aiVerdict,                                  // [추가]
             expectedVisitor: expectedVis, expectedReputation: expectedRep,
             teacherFeedback: '', status: 'waiting', submittedAt: today
         };
@@ -725,6 +768,7 @@ window.executeCampaign = async function() {
                 if (imageUrl) c.imageUrl = imageUrl;
                 c.media = mediaName; c.cost = cost; c.content = content;
                 c.aiFeedback = aiFeedback;
+                c.aiVerdict = aiVerdict;                           // [추가]
                 c.expectedVisitor = expectedVis;
                 c.expectedReputation = expectedRep;
                 c.teacherFeedback = '';
@@ -746,6 +790,7 @@ window.executeCampaign = async function() {
                 imageUrl: imageUrl,
                 media: mediaName, cost: cost, content: content,
                 aiFeedback: aiFeedback,
+                aiVerdict: aiVerdict,                                  // [추가]
                 expectedVisitor: expectedVis, expectedReputation: expectedRep,
                 teacherFeedback: '',
                 status: 'waiting',
@@ -761,6 +806,7 @@ window.executeCampaign = async function() {
         window.saveGameState();
         window.updateUI(true);
         window.renderSharedMarketingBoard();
+        window.clearAIReviseBox('promoContentInput');   // [추가] 보완 요청 안내 정리
 
         document.getElementById('campaignResultArea').style.display = 'block';
         document.getElementById('campaignFeedback').innerHTML = `

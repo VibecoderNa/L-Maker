@@ -260,6 +260,7 @@ window.showStudentDetails = function(sNum, force = false) {
                 proposal: p.proposal || '',
                 aiFeedback: p.aiFeedback || '',
                 aiBudget: p.aiBudget || 0,
+                aiVerdict: p.aiVerdict || '',        // [추가]
                 teacherFeedback: p.teacherFeedback || '',
                 teacherBudget: p.teacherBudget || 0,
                 status: p.status || 'waiting',
@@ -289,12 +290,20 @@ window.showStudentDetails = function(sNum, force = false) {
                 const isLatest = v.round === latestRound;
                 const vStatusText = v.status === 'approved' ? '✅ 승인됨' : (v.status === 'rejected' ? '❌ 재검토 요청됨' : '⏳ 심사 대기중');
 
+                // [2026-09-19 추가] AI 판정 배지
+                //   옛 데이터에는 aiVerdict가 없으므로, 예산이 매겨져 있으면 '기준 충족'으로 봅니다.
+                const vVerdict = v.aiVerdict || ((v.aiBudget || 0) > 0 ? 'ok' : '');
+                const vBadge = vVerdict === 'revise'
+                    ? '<span style="background:#fef3c7; color:#b45309; padding:2px 8px; border-radius:20px; font-size:12px; font-weight:bold; margin-left:6px;">⚠️ 보완 필요</span>'
+                    : (vVerdict === 'ok' ? '<span style="background:#dcfce7; color:#166534; padding:2px 8px; border-radius:20px; font-size:12px; font-weight:bold; margin-left:6px;">✅ 기준 충족</span>' : '');
+
                 verPanels += `
                 <div id="ver-panel-${p.id}-${v.round}" class="ver-panel-${p.id}" style="display:${isLatest ? 'block' : 'none'};">
                     ${versions.length > 1 ? `<div style="font-size:12px; color:var(--text-muted); margin-bottom:8px;">${v.round}차 제출 ${v.submittedAt ? '(' + v.submittedAt + ')' : ''} · ${vStatusText}</div>` : ''}
                     <div style="font-size:14px; line-height:1.6; color:var(--text-main); margin-bottom:15px; background: white; padding: 15px; border-radius: 8px; border: 1px solid #e2e8f0;">${(v.proposal || '').replace(/\n/g, '<br>')}</div>
                     <div style="font-size:13px; background:rgba(2, 132, 199, 0.05); padding:10px; border-radius:6px; border:1px solid rgba(2, 132, 199, 0.2);">
-                        <strong>🤖 AI 1차 의견:</strong> ${v.aiFeedback || ''} <strong style="color:var(--primary);">(AI 제안 예산: ${v.aiBudget || 0}G)</strong>
+                        <strong>🤖 AI 1차 의견:</strong>${vBadge}<br>${(v.aiFeedback || '(AI 의견이 없습니다)').replace(/\n/g, '<br>')}
+                        <div style="margin-top:6px;"><strong style="color:var(--primary);">AI 제안 예산: ${v.aiBudget || 0}G</strong></div>
                     </div>
                     ${v.teacherFeedback ? `<div style="font-size:13px; margin-top:10px; background:rgba(22, 163, 74, 0.1); padding:10px; border-radius:6px; border:1px solid rgba(22, 163, 74, 0.3);"><strong>👨‍🏫 선생님 피드백:</strong> ${v.teacherFeedback}<br><span style="color:var(--accent); font-weight:bold;">(확정 예산: ${v.teacherBudget || 0}G)</span></div>` : ''}
                 </div>`;
@@ -303,10 +312,19 @@ window.showStudentDetails = function(sNum, force = false) {
             // 심사 입력란 (대기중일 때만)
             let reviewUi = '';
             if (p.status === 'waiting') {
-                const suggested = p.aiBudget || 100;
+                // [2026-09-19 변경] AI가 '보완 필요'로 본 제안서는 확정 예산 기본값을 0G로 둡니다.
+                const needRevise = (p.aiVerdict === 'revise');
+                const suggested = needRevise ? 0 : (p.aiBudget || 100);
+                const warnBox = needRevise
+                    ? `<div style="background:#fef3c7; border:1px solid #fde68a; color:#92400e; padding:10px; border-radius:6px; font-size:13px; font-weight:bold; margin-bottom:10px; line-height:1.6;">
+                           ⚠️ AI 담당관은 이 제안서를 <u>보완 필요</u>로 판정했습니다. (학생이 안내를 보고도 제출을 선택함)<br>
+                           내용을 확인하신 뒤 <strong>재검토</strong>로 돌려보내거나, 필요하면 예산을 직접 정해 승인해주세요.
+                       </div>`
+                    : '';
                 reviewUi = `
                     <div style="margin-top:15px; border-top:2px dashed var(--border-color); padding-top:15px; background: rgba(255,255,255,0.7); border-radius: 8px;">
                         <strong style="color:var(--primary); font-size:14px; display:block; margin-bottom:5px;">👨‍🏫 선생님 최종 심사</strong>
+                        ${warnBox}
                         <div style="font-size:13px; color:var(--text-muted); margin-bottom:10px;">AI 담당관이 제안한 예산은 <strong style="color:var(--primary);">${suggested}G</strong>입니다. 선생님께서 조정하여 최종 확정해주세요. 승인하시면 학생에게 예산이 지급되고, AI 의견과 선생님 피드백이 함께 공개됩니다.</div>
                         <textarea id="t-feedback-${p.id}" rows="2" placeholder="예: 훌륭한 아이디어네요! 추가 예산을 지원합니다." style="width:100%; margin:8px 0; padding:8px; border:1px solid var(--border-color); border-radius:6px; box-sizing:border-box; font-family:inherit;"></textarea>
                         <div style="display:flex; gap:10px; align-items:center;">
@@ -367,6 +385,7 @@ window.showStudentDetails = function(sNum, force = false) {
                 reviewUi = `
                     <div style="margin-top:15px; border-top:2px dashed var(--border-color); padding-top:15px;">
                         <strong style="color:var(--primary); font-size:14px; display:block; margin-bottom:5px;">👨‍🏫 마케팅 전략 승인 (최종 성과 산정)</strong>
+                        ${(c.aiVerdict === 'revise') ? `<div style="background:#fef3c7; border:1px solid #fde68a; color:#92400e; padding:10px; border-radius:6px; font-size:13px; font-weight:bold; margin-bottom:10px; line-height:1.6;">⚠️ AI 담당관은 이 기획안을 <u>보완 필요</u>로 판정했습니다. (학생이 안내를 보고도 제출을 선택함)<br>내용을 확인하신 뒤 <strong>재검토</strong>로 돌려보내거나, 필요하면 성과를 직접 정해 승인해주세요.</div>` : ''}
                         <div style="font-size:13px; color:var(--text-muted); margin-bottom:10px;">🤖 AI 담당관이 기획안을 검토하고 제안한 예상 성과입니다. 선생님께서 조정하여 최종 확정해주세요. 승인하시면 학생에게 성과가 지급되고, AI 의견과 선생님 코멘트가 함께 공개됩니다.</div>
                         <div style="display:flex; gap:10px; align-items:center; margin-bottom: 10px; background:#f8fafc; padding:10px; border-radius:6px; border:1px solid var(--border-color);">
                             <div><strong>👥 방문객:</strong> <input type="number" id="c-vis-${c.id}" value="${c.expectedVisitor || 0}" style="width:70px; padding:5px; border-radius:4px; border:1px solid #cbd5e1;"> 명</div>
@@ -387,6 +406,7 @@ window.showStudentDetails = function(sNum, force = false) {
                 round: 1, topic: c.topic || '', target: c.target || '', slogan: c.slogan || '',
                 media: c.media || '', cost: c.cost || 0, content: c.content || '',
                 aiFeedback: c.aiFeedback || '',
+                aiVerdict: c.aiVerdict || '',        // [추가]
                 expectedVisitor: c.expectedVisitor || 0, expectedReputation: c.expectedReputation || 0,
                 teacherFeedback: c.teacherFeedback || '', status: c.status || 'waiting', submittedAt: c.submittedAt || ''
             }];
@@ -411,6 +431,12 @@ window.showStudentDetails = function(sNum, force = false) {
             cVersions.forEach(v => {
                 const isLatest = v.round === cLatestRound;
                 const vStatusText = v.status === 'approved' ? '✅ 승인됨' : (v.status === 'rejected' ? '❌ 재검토 요청됨' : '⏳ 심사 대기중');
+
+                // [2026-09-19 추가] AI 판정 배지
+                const cVerdict = v.aiVerdict || ((v.expectedVisitor || 0) > 0 ? 'ok' : '');
+                const cBadge = cVerdict === 'revise'
+                    ? '<span style="background:#fef3c7; color:#b45309; padding:2px 8px; border-radius:20px; font-size:12px; font-weight:bold; margin-left:6px;">⚠️ 보완 필요</span>'
+                    : (cVerdict === 'ok' ? '<span style="background:#dcfce7; color:#166534; padding:2px 8px; border-radius:20px; font-size:12px; font-weight:bold; margin-left:6px;">✅ 기준 충족</span>' : '');
                 cVerPanels += `
                 <div id="cver-panel-${c.id}-${v.round}" class="cver-panel-${c.id}" style="display:${isLatest ? 'block' : 'none'};">
                     ${cVersions.length > 1 ? `<div style="font-size:12px; color:var(--text-muted); margin-bottom:8px;">${v.round}차 제출 ${v.submittedAt ? '(' + v.submittedAt + ')' : ''} · ${vStatusText} · 매체 ${v.media || '미지정'} (${v.cost || 0}G)</div>` : ''}
@@ -421,7 +447,7 @@ window.showStudentDetails = function(sNum, force = false) {
                     <div style="font-size: 16px; font-weight: bold; color: var(--text-main); margin-bottom: 10px; margin-top: 5px;">"${v.slogan || ""}"</div>
                     <div style="font-size:14px; line-height:1.6; color:var(--text-main); margin-bottom:15px; background: white; padding: 15px; border-radius: 8px; border: 1px solid #e2e8f0;">${(v.content || '').replace(/\n/g, '<br>')}</div>
                     <div style="font-size:13px; background:rgba(2, 132, 199, 0.05); padding:10px; border-radius:6px; border:1px solid rgba(2, 132, 199, 0.2);">
-                        <strong>🤖 AI 1차 의견:</strong> ${v.aiFeedback || '(AI 의견이 없습니다)'}
+                        <strong>🤖 AI 1차 의견:</strong>${cBadge}<br>${(v.aiFeedback || '(AI 의견이 없습니다)').replace(/\n/g, '<br>')}
                         <div style="margin-top:6px;"><strong style="color:var(--primary);">AI 제안 성과:</strong> 방문객 +${v.expectedVisitor || 0}명 · 평판 +${v.expectedReputation || 0}점</div>
                     </div>
                     ${v.teacherFeedback ? `<div style="font-size:13px; margin-top:10px; background:rgba(22, 163, 74, 0.1); padding:10px; border-radius:6px; border:1px solid rgba(22, 163, 74, 0.3);"><strong>👨‍🏫 선생님 코멘트:</strong> ${v.teacherFeedback}</div>` : ''}

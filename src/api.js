@@ -112,8 +112,9 @@ window.callGeminiAPI = async function(prompt, inlineData = null) {
     // Gemini 3 계열은 '사고 수준'을 낮추면 훨씬 빠르고 토큰도 적게 씁니다.
     // (초등 수업용 짧은 답변에는 깊은 추론이 필요 없습니다)
     // 혹시 모델이 이 항목을 지원하지 않으면 아래 400 처리에서 자동으로 빼고 다시 시도합니다.
-    const buildBody = (useThinking) => {
-        const gc = {};
+    // [2026-09-19 변경] maxOutputTokens를 넉넉히 지정해 답변이 중간에 끊기는 것을 막습니다.
+    const buildBody = (useThinking, maxTokens = 4096) => {
+        const gc = { maxOutputTokens: maxTokens };
         if (useThinking && /^gemini-3/.test(model)) {
             gc.thinkingConfig = { thinkingLevel: "LOW" };
         } else {
@@ -125,6 +126,7 @@ window.callGeminiAPI = async function(prompt, inlineData = null) {
     let body = buildBody(window.geminiUseThinkingConfig);
 
     let lastError = null;
+    let retriedLonger = false;   // [2026-09-19 추가] 길이 제한으로 끊겼을 때 딱 한 번만 더 길게 요청
 
     for (let i = 0; i < keys.length; i++) {
         const key = keys[i];
@@ -141,13 +143,39 @@ window.callGeminiAPI = async function(prompt, inlineData = null) {
 
                 if (response.ok) {
                     const result = await response.json();
-                    const text = result?.candidates?.[0]?.content?.parts?.[0]?.text;
-                    if (!text) {
-                        lastError = new Error("EMPTY_RESPONSE");
-                        lastError.userMessage = "AI가 답변을 만들지 못했습니다. 내용을 조금 바꿔서 다시 시도해주세요.";
-                        break;
+
+                    // [2026-09-19 변경] 답변 조각(parts)을 전부 합쳐서 읽습니다.
+                    // 예전에는 parts[0].text 하나만 읽어서, 답변이 여러 조각으로 나뉘어 오거나
+                    // 첫 조각에 '생각 과정'이 담기면 문장이 끊기거나 아예 비어 보였습니다.
+                    const text = window.extractGeminiText(result);
+                    const finishReason = result?.candidates?.[0]?.finishReason || "";
+
+                    // (1) 길이 제한에 걸려 끊긴 경우 → 한도를 늘려 한 번 더 요청
+                    if (finishReason === "MAX_TOKENS" && !retriedLonger) {
+                        retriedLonger = true;
+                        window.geminiUseThinkingConfig = false;   // 생각 과정이 길이를 잡아먹는 것을 막음
+                        body = buildBody(false, 8192);
+                        console.warn("[AI] 답변이 길이 제한에 걸렸습니다. 한도를 늘려 다시 요청합니다.");
+                        continue;
                     }
-                    return text;
+
+                    // (2) 안전 필터에 막힌 경우 → 재시도해도 소용없으므로 바로 안내
+                    const blockReason = result?.promptFeedback?.blockReason || "";
+                    if (!text && (blockReason || finishReason === "SAFETY")) {
+                        const e = new Error("BLOCKED");
+                        e.userMessage = "AI가 답변하기 어려운 표현이 있었어요. 문장을 조금 바꿔서 다시 시도해주세요.";
+                        throw e;
+                    }
+
+                    // (3) 정상 응답
+                    if (text) return text;
+
+                    // (4) 빈 답변 → 같은 키로 한 번 더 시도 (예전에는 바로 포기했습니다)
+                    console.warn(`[AI] 빈 답변이 돌아왔습니다(finishReason=${finishReason || "없음"}). 다시 시도합니다.`);
+                    lastError = new Error("EMPTY_RESPONSE");
+                    lastError.userMessage = "AI가 답변을 만들지 못했습니다. 잠시 후 다시 시도해주세요.";
+                    if (attempt < 2) { await sleep(800 * (attempt + 1)); continue; }
+                    break;
                 }
 
                 // 오류 본문에서 구글이 준 설명을 꺼내둔다 (선생님 디버깅용)
@@ -200,7 +228,8 @@ window.callGeminiAPI = async function(prompt, inlineData = null) {
                 break; // 다음 키
 
             } catch (err) {
-                if (err.message === "MODEL_NOT_FOUND") throw err;
+                // [2026-09-19 변경] BLOCKED도 재시도 없이 바로 밖으로 내보냅니다.
+                if (err.message === "MODEL_NOT_FOUND" || err.message === "BLOCKED") throw err;
                 // 네트워크 오류 등
                 lastError = err;
                 if (!err.userMessage) lastError.userMessage = "인터넷 연결을 확인하고 다시 시도해주세요.";
@@ -368,6 +397,14 @@ window.submitProblemToBoard = async function() {
 // ==========================================
 // 1단계: 해결 제안서 제출 (AI 1차 검토 → 선생님 최종 심사)
 // ==========================================
+// ==========================================
+// 1단계: 해결 제안서 제출 (AI 1차 검토 → 선생님 최종 심사)
+// [2026-09-19 변경]
+//   AI가 '적합 / 보완필요'를 판정합니다.
+//   - 적합    : 예상 예산 50~150G를 제안하고 선생님께 전달
+//   - 보완필요 : 예산 0G. 제출하지 않고 학생에게 바로 고칠 기회를 줍니다.
+//               (학생이 원하면 '그래도 제출할래요'로 선생님께 보낼 수 있습니다)
+// ==========================================
 window.submitProposal = async function() {
     if (window.isAILoading) return;
 
@@ -377,6 +414,8 @@ window.submitProposal = async function() {
 
     const text = document.getElementById('proposalText').value.trim();
     if (text.length < 20) return window.showNotification("제안서를 조금 더 자세히 작성해주세요.");
+
+    window.clearAIReviseBox('proposalText');   // [추가] 지난번 보완 요청 안내 지우기
 
     window.isAILoading = true;
     window.showAILoading();
@@ -391,31 +430,70 @@ window.submitProposal = async function() {
             }
         }
 
-        const prompt = `너는 초등학교 4학년 학생의 지역 문제 해결 제안서를 1차로 검토하는 따뜻하고 긍정적인 AI 비서야.
+        // ── [변경] 판정(적합/보완필요)을 요구하는 프롬프트 ──
+        const prompt = `너는 초등학교 4학년 학생이 낸 '지역 문제 해결 제안서'를 1차로 검토하는 AI 담당관이야.
 최종 심사는 선생님이 하시고, 너는 선생님께 전달할 1차 의견을 쓰는 역할이야.
+무조건 칭찬만 하면 안 돼. 기준에 맞지 않으면 분명하게 '보완필요'로 판정해야 해.
 
 해결하려는 문제: ${window.currentSelectedProblem}
 학생의 제안 내용: ${text}
 
-검토 기준: 1) 실현 가능성 - 초등학생 수준에서 실제로 해볼 수 있는가
-          2) 공공성 - 나 혼자가 아니라 여러 사람에게 도움이 되는가
+[평가 기준]
+1) 관련성 - 위에 적힌 문제를 실제로 해결하는 내용인가
+2) 실현 가능성 - 초등학생과 지역 주민이 실제로 해볼 수 있는가
+3) 공공성 - 나 혼자가 아니라 여러 사람에게 도움이 되는가
+4) 구체성 - 누가, 무엇을, 어떻게 하는지 알 수 있게 썼는가
 
-첫 번째 줄에는 다른 말 없이 50부터 150 사이의 정수 하나만 적어줘. (제안의 구체성과 공공성을 고려한 예상 예산)
-두 번째 줄부터는 학생에게 전할 의견을 써줘. 칭찬을 먼저 하고, 더 좋아질 수 있는 점을 한 가지 덧붙여줘.
-초등학교 4학년이 읽을 수 있는 쉬운 말로 3문장 이내로 써줘.`;
+[반드시 '보완필요'로 판정해야 하는 경우]
+- 위에 적힌 문제와 상관없는 내용이거나, 장난으로 쓴 글일 때
+- 뜻을 알 수 없는 글자나 같은 말의 반복일 때
+- "열심히 하자", "깨끗이 쓰자"처럼 방법 없이 다짐만 있을 때
+- 초등학생이나 우리 지역에서 도저히 할 수 없는 방법일 때
+  (예: 수백억 원 쓰기, 법을 새로 만들기, 사람을 가두거나 크게 벌주기, 24시간 감시하기)
+- 특정한 사람을 탓하거나 미워하는 내용일 때
+
+[출력 형식] 반드시 이대로 지켜줘.
+첫 번째 줄에는 "판정|예산" 형식으로만 적어. 다른 말은 절대 쓰지 마.
+ - 기준에 맞으면:      적합|(50부터 150 사이 정수. 구체적이고 공공성이 클수록 높게)
+ - 기준에 맞지 않으면: 보완필요|0
+두 번째 줄부터는 학생에게 전할 의견을 써줘.
+ - '적합'일 때: 잘한 점을 먼저 칭찬하고, 더 좋아질 점 한 가지를 덧붙여줘.
+ - '보완필요'일 때: 노력한 점을 짧게 인정한 뒤, 어떤 기준에 맞지 않았는지 알려주고,
+   어떻게 고쳐 쓰면 좋을지 구체적인 방법을 두 가지 알려줘. 마지막에 다시 써보자고 응원해줘.
+초등학교 4학년이 읽을 수 있는 쉬운 말로, 4문장 이내로 써줘.`;
 
         const resText = await window.callGeminiAPI(prompt);
 
-        // AI 응답에서 예상 예산과 의견을 분리 (숫자는 반드시 50~150으로 제한)
-        const lines = resText.split('\n');
-        let aiBudget = 100;
-        let aiFeedback = resText.trim();
+        // ── [변경] AI의 판정과 예상 예산을 읽어낸다 ──
+        const parsedHead = window.splitAIHead(resText);
+        let aiVerdict = window.detectAIVerdict(parsedHead.head);
+        let aiFeedback = parsedHead.body || resText.trim();
 
-        const firstLineNum = parseInt(String(lines[0]).replace(/[^0-9]/g, ''), 10);
-        if (!isNaN(firstLineNum)) {
-            aiBudget = Math.min(150, Math.max(50, firstLineNum));
-            const rest = lines.slice(1).join('\n').trim();
-            if (rest) aiFeedback = rest;
+        const numMatch = String(parsedHead.head).match(/(\d+)/);
+        const headNum = numMatch ? parseInt(numMatch[1], 10) : NaN;
+
+        if (aiVerdict === null) {
+            // AI가 형식을 지키지 않은 경우: 예전 방식대로 '적합'으로 보고, 전체를 의견으로 사용
+            aiVerdict = 'ok';
+            if (isNaN(headNum)) aiFeedback = resText.trim();
+        }
+
+        const aiBudget = (aiVerdict === 'ok')
+            ? (isNaN(headNum) ? 100 : Math.min(150, Math.max(50, headNum)))
+            : 0;   // 보완이 필요하면 예산을 제안하지 않는다
+
+        // ── [추가] 보완 필요 → 제출하지 않고 바로 고칠 기회를 준다 ──
+        if (aiVerdict === 'revise') {
+            window.hideAILoading();
+            window.showAIReviseBox('proposalText', aiFeedback);
+            const goAnyway = await window.uiConfirm(
+                aiFeedback + "\n\n─────────────\n고쳐서 다시 내면 더 좋은 평가를 받을 수 있어요.\n그래도 지금 그대로 내고 싶다면 오른쪽 버튼을 눌러주세요.",
+                { title: '🤖 AI 담당관: 조금만 더 보완해봐요', okText: '그래도 제출할래요', cancelText: '고쳐서 다시 쓸게요' }
+            );
+            if (!goAnyway) {
+                window.showNotification("AI 담당관의 의견을 참고해 제안서를 고쳐서 다시 제출해주세요.");
+                return;   // 제출하지 않음 (기록·예산 변화 없음)
+            }
         }
 
         const today = window.getTodayStr();
@@ -436,6 +514,7 @@ window.submitProposal = async function() {
                         proposal: p.proposal || '',
                         aiFeedback: p.aiFeedback || '',
                         aiBudget: p.aiBudget || 0,
+                        aiVerdict: p.aiVerdict || '',
                         teacherFeedback: p.teacherFeedback || '',
                         teacherBudget: p.teacherBudget || 0,
                         status: p.status || 'rejected',
@@ -449,6 +528,7 @@ window.submitProposal = async function() {
                     proposal: text,
                     aiFeedback: aiFeedback,
                     aiBudget: aiBudget,
+                    aiVerdict: aiVerdict,
                     teacherFeedback: '',
                     teacherBudget: 0,
                     status: 'waiting',
@@ -462,6 +542,7 @@ window.submitProposal = async function() {
                 p.proposal = text;
                 p.aiFeedback = aiFeedback;
                 p.aiBudget = aiBudget;
+                p.aiVerdict = aiVerdict;
                 p.teacherFeedback = '';
                 p.teacherBudget = 0;
                 p.status = 'waiting';
@@ -484,6 +565,7 @@ window.submitProposal = async function() {
                 proposal: text,
                 aiFeedback: aiFeedback,
                 aiBudget: aiBudget,
+                aiVerdict: aiVerdict,
                 teacherFeedback: '',
                 teacherBudget: 0,
                 status: 'waiting',
@@ -495,6 +577,7 @@ window.submitProposal = async function() {
                     proposal: text,
                     aiFeedback: aiFeedback,
                     aiBudget: aiBudget,
+                    aiVerdict: aiVerdict,
                     teacherFeedback: '',
                     teacherBudget: 0,
                     status: 'waiting',
@@ -510,6 +593,7 @@ window.submitProposal = async function() {
         window.renderSharedProposals();
 
         document.getElementById('proposalText').value = '';
+        window.clearAIReviseBox('proposalText');
         document.getElementById('selectedProblemDisplay').style.display = 'none';
         window.currentSelectedProblem = null;
         document.querySelectorAll('#problemBoard .board-item-selectable').forEach(el => el.classList.remove('selected'));
@@ -525,6 +609,7 @@ window.submitProposal = async function() {
         window.hideAILoading();
     }
 }
+
 
 // ==========================================
 // 2단계: AI 홍보 담당관에게 조언 구하기 (인라인 로딩)
@@ -571,3 +656,65 @@ window.getAIConsulting = async function() {
         window.isAILoading = false;
     }
 }
+
+// ==========================================
+// [2026-09-19 추가] AI 답변 해석 도우미
+// ==========================================
+
+// AI 답변 조각(parts)을 전부 합쳐서 글자만 꺼낸다.
+// ※ '생각 과정(thought)' 조각은 제외합니다.
+// ※ parts[0].text 하나만 읽으면 답변이 끊기거나 비어 보이는 문제가 생깁니다.
+window.extractGeminiText = function(result) {
+    const parts = result?.candidates?.[0]?.content?.parts;
+    if (!Array.isArray(parts)) return "";
+    return parts
+        .filter(p => p && p.thought !== true && typeof p.text === 'string')
+        .map(p => p.text)
+        .join('')
+        .trim();
+};
+
+// 첫 줄에서 판정을 읽는다 → 'ok' / 'revise' / null(형식을 안 지킨 경우)
+window.detectAIVerdict = function(headLine) {
+    const s = String(headLine || '');
+    if (/보완\s*필요|부적합|재작성|미흡|반려/.test(s)) return 'revise';
+    if (/적합|통과|승인/.test(s)) return 'ok';
+    return null;
+};
+
+// 첫 줄(판정·숫자)과 나머지 의견을 나눈다.
+// AI가 "적합|90 아주 좋아요." 처럼 한 줄에 다 써도 문장이 사라지지 않게 합니다.
+window.splitAIHead = function(rawText) {
+    const lines = String(rawText || '').split('\n');
+    let head = (lines[0] || '').trim();
+    let body = lines.slice(1).join('\n').trim();
+
+    const m = head.match(/^\s*(?:판정\s*[:：]?)?\s*(적합|보완\s*필요|부적합|통과|미흡)\s*[|,/:：\-]?\s*([0-9]+(?:\s*[,|/]\s*[0-9]+)?)?\s*(.*)$/);
+    if (m) {
+        head = `${m[1]} ${m[2] || ''}`.trim();
+        const rest = (m[3] || '').trim();
+        if (rest) body = body ? (rest + '\n' + body) : rest;
+    }
+    return { head, body };
+};
+
+// 입력칸 바로 아래에 '보완 요청' 안내 상자를 띄운다 (index.html 수정 없이 동적 생성)
+window.showAIReviseBox = function(anchorElementId, feedbackText) {
+    const anchor = document.getElementById(anchorElementId);
+    if (!anchor) return;
+    const boxId = anchorElementId + '-aiReviseBox';
+    let box = document.getElementById(boxId);
+    if (!box) {
+        box = document.createElement('div');
+        box.id = boxId;
+        anchor.parentNode.insertBefore(box, anchor.nextSibling);
+    }
+    box.style.cssText = 'margin-top:12px; padding:14px; border-radius:10px; background:#fffbeb;' +
+        'border:1px solid #fde68a; color:#92400e; font-size:14px; line-height:1.7;';
+    box.innerHTML = `<strong>🤖 AI 담당관의 보완 요청</strong><br>${window.textToHtml(feedbackText)}`;
+};
+
+window.clearAIReviseBox = function(anchorElementId) {
+    const box = document.getElementById(anchorElementId + '-aiReviseBox');
+    if (box) box.remove();
+};

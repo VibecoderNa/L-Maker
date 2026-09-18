@@ -114,13 +114,33 @@ let secretClicks = 0; let secretTimeout;
 window.handleSecretTeacherLogin = function() { secretClicks++; clearTimeout(secretTimeout); secretTimeout = setTimeout(() => secretClicks = 0, 1500); if (secretClicks >= 5) { secretClicks = 0; window.initSystem(true); } }
 window.toggleLogoutMenu = function(e) { const menu = document.getElementById('logoutMenu'); menu.style.display = menu.style.display === 'none' ? 'block' : 'none'; }
 
+// ==========================================
+// [2026-09-19 변경] 로그아웃 처리
+//  - 예전: document.body.style.opacity = '0.5' 로 화면 전체를 반투명하게 만들었습니다.
+//          아무 설명이 없어서 "화면이 뿌옇게 흐려지는" 오류처럼 보였습니다.
+//  - 지금: 안내 문구가 있는 덮개를 씌워 처리 중임을 분명히 알려줍니다.
+// ==========================================
+window.showLogoutOverlay = function() {
+    if (document.getElementById('logoutOverlay')) return;
+    const el = document.createElement('div');
+    el.id = 'logoutOverlay';
+    el.style.cssText = 'position:fixed; inset:0; z-index:12000; background:rgba(15,23,42,0.75);' +
+        'color:#ffffff; display:flex; flex-direction:column; align-items:center; justify-content:center;' +
+        'gap:14px; font-weight:bold; font-size:17px; text-align:center; padding:20px;';
+    el.innerHTML = '<i class="fa-solid fa-spinner fa-spin" style="font-size:30px;"></i>' +
+        '<div>안전하게 로그아웃하고 있어요…</div>';
+    document.body.appendChild(el);
+};
+
 window.executeLogout = async function(e) {
     if(e) e.stopPropagation();
     const ok = await window.uiConfirm("시스템을 종료하고 로그아웃합니다.\n작성 중인 내용이 있다면 먼저 제출해주세요.",
         { title: '👋 로그아웃할까요?', okText: '로그아웃', cancelText: '더 할래요' });
     if (!ok) return;
+
+    window.showLogoutOverlay();   // [변경] body 반투명(opacity 0.5) 대신 안내 덮개
+
     if(!window.isTeacherMode && window.classKey && window.userKey) {
-        document.body.style.opacity = '0.5';
         if (window.heartbeatTimer) { clearInterval(window.heartbeatTimer); window.heartbeatTimer = null; }
         try {
             // 저장이 늦어져도 로그아웃은 반드시 진행되도록 2초만 기다린다
@@ -130,7 +150,7 @@ window.executeLogout = async function(e) {
             ]);
         } catch(err) { console.error("로그아웃 오류:", err); }
     }
-    location.reload(); 
+    location.reload();
 };
 
 // ==========================================
