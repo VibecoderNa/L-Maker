@@ -13,6 +13,40 @@ window.MAX_PROPOSAL_VERSIONS = 3;
 window.apiKeyCooldowns = {};   // { 키: 쿨다운 해제 시각(ms) }
 window.apiKeyDisabled = {};    // { 키: true }
 
+// ==========================================
+// [2026-09-19 추가] AI 대기 시간 상한 (숫자만 고치면 됩니다)
+//   ※ 예전에는 시간 제한이 아예 없어서 구글이 응답하지 않으면 몇 분씩 멈췄습니다.
+// ==========================================
+window.AI_REQUEST_TIMEOUT_MS      = 35000;  // 요청 1건 최대 대기 (심사용)
+window.AI_REQUEST_TIMEOUT_FAST_MS = 20000;  // 요청 1건 최대 대기 (가벼운 조언)
+window.AI_TOTAL_DEADLINE_MS       = 75000;  // 재시도까지 포함한 전체 포기 시각 (심사용)
+window.AI_TOTAL_DEADLINE_FAST_MS  = 45000;  // 재시도까지 포함한 전체 포기 시각 (가벼운 조언)
+window.AI_MAX_503_TRIES           = 4;      // 서버 혼잡(503) 총 재시도 횟수
+
+// ==========================================
+// ★★★ 교과 학습 내용 (수업에서 다룬 개념) ★★★
+//   여기 한 곳만 고치면 아래 네 곳의 AI 답변에 모두 반영됩니다.
+//     1) AI 비서 힌트        2) 해결 제안서 1차 검토
+//     3) AI 홍보 컨설팅      4) 홍보 기획안 1차 검토 (ui.js)
+//
+//   사용법: 아래 배열에 "개념: 설명" 형태로 한 줄씩 추가하세요.
+//   비어 있으면(지금 상태) AI 프롬프트는 예전과 완전히 동일하게 동작합니다.
+// ==========================================
+window.LEARNING_CONCEPTS = [
+    // 예시)
+    // "중심지: 사람들이 많이 모이는 곳. 시장, 버스터미널, 시청 주변이 대표적이다.",
+    // "공공 기관: 주민 모두의 편안하고 안전한 생활을 위해 세운 곳. 시청, 경찰서, 소방서 등.",
+];
+
+// 위 배열을 AI에게 전달할 문장으로 만들어 준다 (비어 있으면 아무것도 붙이지 않음)
+window.buildLearningBlock = function() {
+    if (!Array.isArray(window.LEARNING_CONCEPTS) || window.LEARNING_CONCEPTS.length === 0) return '';
+    return '\n\n[우리 반이 수업에서 배운 내용]\n'
+        + window.LEARNING_CONCEPTS.map(s => '- ' + s).join('\n')
+        + '\n※ 이 낱말들을 억지로 나열하지 마. 학생의 글과 관련 있는 것만 1~2가지 골라,'
+        + ' 초등학교 4학년이 알아들을 쉬운 말로 자연스럽게 녹여서 써줘.';
+};
+
 // 로딩 중 보여줄 학습 팁 (4학년 사회 '우리 지역' 관련 개념)
 // ※ "💡 시장님, 그거 아시나요?" 제목은 index.html에 이미 있으므로 본문에는 넣지 않습니다.
 window.aiLoadingTips = [
@@ -94,7 +128,7 @@ window.getUsableApiKeys = function() {
 
 // options.fast = true  →  '빠른 모드'
 //   AI 비서 힌트, 홍보 컨설팅처럼 판정이 필요 없는 가벼운 조언에 씁니다.
-//   생각 과정을 최소로 줄여 응답이 2~4초 빨라집니다.
+//   생각 과정을 최소로 줄여 응답을 빠르게 합니다.
 //   제안서·홍보 심사처럼 판정이 필요한 곳에서는 쓰지 않습니다.
 window.callGeminiAPI = async function(prompt, inlineData = null, options = {}) {
     const fast = options && options.fast === true;
@@ -127,11 +161,7 @@ window.callGeminiAPI = async function(prompt, inlineData = null, options = {}) {
     if (inlineData) parts.push({ inlineData: inlineData });
 
     // Gemini 3 계열은 '사고 수준'을 낮추면 훨씬 빠르고 토큰도 적게 씁니다.
-    // (초등 수업용 짧은 답변에는 깊은 추론이 필요 없습니다)
     // 혹시 모델이 이 항목을 지원하지 않으면 아래 400 처리에서 자동으로 빼고 다시 시도합니다.
-    // [2026-09-19 변경] maxOutputTokens를 넉넉히 지정해 답변이 중간에 끊기는 것을 막습니다.
-    // [2026-09-19 변경] 빠른 모드에서는 생각 수준을 최소로 낮추고 출력 한도도 줄입니다.
-    //   모델이 MINIMAL을 지원하지 않으면 아래 400 처리에서 자동으로 LOW로 내려갑니다.
     if (window.geminiFastThinkingLevel === undefined) window.geminiFastThinkingLevel = "MINIMAL";
     const defaultMaxTokens = fast ? 1024 : 4096;
 
@@ -148,28 +178,60 @@ window.callGeminiAPI = async function(prompt, inlineData = null, options = {}) {
     if (window.geminiUseThinkingConfig === undefined) window.geminiUseThinkingConfig = true;
     let body = buildBody(window.geminiUseThinkingConfig);
 
-    let lastError = null;
-    let retriedLonger = false;   // [2026-09-19 추가] 길이 제한으로 끊겼을 때 딱 한 번만 더 길게 요청
+    // ===== [2026-09-19 추가] 무한 대기 방지 장치 =====
+    //  예전에는 fetch에 시간 제한이 없어서, 구글이 응답을 주지 않으면
+    //  화면이 몇 분이고 그대로 멈춰 있었습니다.
+    const perRequestMs = fast
+        ? (window.AI_REQUEST_TIMEOUT_FAST_MS || 20000)
+        : (window.AI_REQUEST_TIMEOUT_MS || 35000);
+    const totalDeadline = Date.now() + (fast
+        ? (window.AI_TOTAL_DEADLINE_FAST_MS || 45000)
+        : (window.AI_TOTAL_DEADLINE_MS || 75000));
+    const maxBusyTries = window.AI_MAX_503_TRIES || 4;
+    let busyTries = 0;
+    const timeLeft = () => totalDeadline - Date.now();
 
+    const fetchWithTimeout = async (url, init, ms) => {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), Math.max(3000, ms));
+        try {
+            return await fetch(url, Object.assign({}, init, { signal: controller.signal }));
+        } finally {
+            clearTimeout(timer);
+        }
+    };
+    // ===============================================
+
+    let lastError = null;
+    let retriedLonger = false;   // 길이 제한으로 끊겼을 때 딱 한 번만 더 길게 요청
+
+    outer:
     for (let i = 0; i < keys.length; i++) {
         const key = keys[i];
         const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`;
 
-        // 503(서버 혼잡)은 키를 바꿔도 소용없으므로 같은 키로 1초 → 2초 → 4초 재시도
+        // 503(서버 혼잡)은 키를 바꿔도 소용없으므로 잠깐 쉬었다가 재시도
         for (let attempt = 0; attempt < 3; attempt++) {
+
+            // [2026-09-19 추가] 전체 대기 시간을 넘기면 더 버티지 않고 포기한다
+            if (timeLeft() <= 2000) {
+                console.warn("[AI] 전체 대기 시간을 넘겨 요청을 중단합니다.");
+                if (!lastError) lastError = new Error("TOTAL_TIMEOUT");
+                lastError.userMessage = "AI 담당관의 응답이 너무 늦어 중단했습니다. 잠시 후 다시 시도해주세요.";
+                break outer;
+            }
+
             try {
-                const response = await fetch(url, {
+                const response = await fetchWithTimeout(url, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(body)
-                });
+                }, Math.min(perRequestMs, timeLeft()));
 
                 if (response.ok) {
                     const result = await response.json();
 
-                    // [2026-09-19 변경] 답변 조각(parts)을 전부 합쳐서 읽습니다.
-                    // 예전에는 parts[0].text 하나만 읽어서, 답변이 여러 조각으로 나뉘어 오거나
-                    // 첫 조각에 '생각 과정'이 담기면 문장이 끊기거나 아예 비어 보였습니다.
+                    // 답변 조각(parts)을 전부 합쳐서 읽습니다.
                     const text = window.extractGeminiText(result);
                     const finishReason = result?.candidates?.[0]?.finishReason || "";
 
@@ -179,6 +241,7 @@ window.callGeminiAPI = async function(prompt, inlineData = null, options = {}) {
                         window.geminiUseThinkingConfig = false;   // 생각 과정이 길이를 잡아먹는 것을 막음
                         body = buildBody(false, 8192);
                         console.warn("[AI] 답변이 길이 제한에 걸렸습니다. 한도를 늘려 다시 요청합니다.");
+                        attempt--;   // [추가] 이 재요청은 재시도 횟수로 세지 않는다
                         continue;
                     }
 
@@ -193,11 +256,11 @@ window.callGeminiAPI = async function(prompt, inlineData = null, options = {}) {
                     // (3) 정상 응답
                     if (text) return text;
 
-                    // (4) 빈 답변 → 같은 키로 한 번 더 시도 (예전에는 바로 포기했습니다)
+                    // (4) 빈 답변 → 같은 키로 한 번 더 시도
                     console.warn(`[AI] 빈 답변이 돌아왔습니다(finishReason=${finishReason || "없음"}). 다시 시도합니다.`);
                     lastError = new Error("EMPTY_RESPONSE");
                     lastError.userMessage = "AI가 답변을 만들지 못했습니다. 잠시 후 다시 시도해주세요.";
-                    if (attempt < 2) { await sleep(800 * (attempt + 1)); continue; }
+                    if (attempt < 2 && timeLeft() > 5000) { await sleep(800 * (attempt + 1)); continue; }
                     break;
                 }
 
@@ -226,23 +289,30 @@ window.callGeminiAPI = async function(prompt, inlineData = null, options = {}) {
                 }
 
                 if (response.status >= 500) {
-                    console.warn(`[AI] 구글 서버 혼잡(${response.status}). ${attempt + 1}번째 재시도 준비.`);
+                    // [2026-09-19 변경] 503은 '구글 쪽 모델 혼잡'입니다.
+                    //   키를 바꿔도 결과가 같으므로, 키 개수와 상관없이 총 재시도 횟수를 제한합니다.
+                    //   (예전에는 키 5개 × 3회 = 15번을 전부 시도해 몇 분씩 걸렸습니다)
+                    busyTries++;
+                    console.warn(`[AI] 구글 서버 혼잡(${response.status}). 재시도 ${busyTries}/${maxBusyTries}.`, detail);
                     lastError = new Error(`SERVER_${response.status}`);
-                    lastError.userMessage = "AI 담당관이 잠시 쉬고 있습니다. 잠시 후 다시 시도해주세요.";
-                    if (attempt < 2) { await sleep(1000 * Math.pow(2, attempt)); continue; }
-                    break; // 다음 키
+                    lastError.userMessage = "지금 AI 담당관에게 요청이 몰려 있습니다(서버 혼잡). 1~2분 뒤에 다시 시도해주세요.";
+                    if (busyTries >= maxBusyTries) break outer;
+                    const wait = Math.min(4000, 800 * Math.pow(2, attempt));
+                    if (wait + 3000 >= timeLeft()) break outer;
+                    await sleep(wait);
+                    continue;
                 }
 
-                // 400인데 설정(generationConfig) 문제라면, 키 문제가 아니라 요청 형식 문제다.
                 // 400인데 설정(generationConfig) 문제라면, 키 문제가 아니라 요청 형식 문제다.
                 if (response.status === 400 &&
                     /thinking|generation_?config|generationConfig|Unknown name|Invalid value/i.test(detail)) {
 
-                    // [2026-09-19 추가] 빠른 모드의 생각 수준(MINIMAL)을 모르는 모델이면 LOW로 내린다.
+                    // 빠른 모드의 생각 수준(MINIMAL)을 모르는 모델이면 LOW로 내린다.
                     if (fast && window.geminiUseThinkingConfig && window.geminiFastThinkingLevel === "MINIMAL") {
                         console.warn("[AI] 이 모델은 MINIMAL 생각 수준을 지원하지 않습니다. LOW로 내려 다시 시도합니다.");
                         window.geminiFastThinkingLevel = "LOW";
                         body = buildBody(window.geminiUseThinkingConfig);
+                        attempt--;   // [추가] 이 재요청은 재시도 횟수로 세지 않는다
                         continue;
                     }
 
@@ -251,6 +321,7 @@ window.callGeminiAPI = async function(prompt, inlineData = null, options = {}) {
                         console.warn("[AI] 이 모델은 사고 수준 설정을 지원하지 않습니다. 설정을 빼고 다시 시도합니다.");
                         window.geminiUseThinkingConfig = false;
                         body = buildBody(false);
+                        attempt--;   // [추가] 이 재요청은 재시도 횟수로 세지 않는다
                         continue;
                     }
                 }
@@ -263,12 +334,21 @@ window.callGeminiAPI = async function(prompt, inlineData = null, options = {}) {
                 break; // 다음 키
 
             } catch (err) {
-                // [2026-09-19 변경] BLOCKED도 재시도 없이 바로 밖으로 내보냅니다.
+                // BLOCKED / 모델명 오류는 재시도 없이 바로 밖으로 내보냅니다.
                 if (err.message === "MODEL_NOT_FOUND" || err.message === "BLOCKED") throw err;
+
+                // [2026-09-19 추가] 제한 시간 안에 응답이 오지 않아 끊은 경우
+                if (err.name === 'AbortError') {
+                    console.warn(`[AI] ${Math.round(perRequestMs / 1000)}초 안에 응답이 오지 않아 요청을 끊었습니다.`);
+                    lastError = new Error("REQUEST_TIMEOUT");
+                    lastError.userMessage = "AI 담당관의 응답이 늦어지고 있습니다. 잠시 후 다시 시도해주세요.";
+                    break;   // 같은 키로 또 오래 기다리지 않고 다음 키로
+                }
+
                 // 네트워크 오류 등
                 lastError = err;
                 if (!err.userMessage) lastError.userMessage = "인터넷 연결을 확인하고 다시 시도해주세요.";
-                if (attempt < 2) { await sleep(1000 * Math.pow(2, attempt)); continue; }
+                if (attempt < 2 && timeLeft() > 5000) { await sleep(1000 * Math.pow(2, attempt)); continue; }
                 break;
             }
         }
@@ -362,7 +442,7 @@ ${photoFile ? "학생이 직접 찍은 현장 사진이 함께 첨부되어 있�
 
 이 자료를 보고 학생이 '우리 지역의 문제'로 삼을 만한 핵심 주제를 1~2가지 짚어줘.
 - 정답을 바로 알려주지 말고, 학생이 스스로 생각하도록 질문을 섞어줘.
-- 초등학교 4학년이 이해할 수 있는 쉬운 말로, 3문장 이내로 다정하게 써줘.`;
+- 초등학교 4학년이 이해할 수 있는 쉬운 말로, 3문장 이내로 다정하게 써줘.${window.buildLearningBlock()}`;
 
         const resText = await window.callGeminiAPI(prompt, inlineData, { fast: true });   // [변경] 가벼운 조언 → 빠른 모드
         adviceArea.innerHTML = `<strong>💡 AI 비서의 힌트:</strong><br>${resText.replace(/\n/g, '<br>')}`;
@@ -479,7 +559,7 @@ window.submitProposal = async function() {
 1) 관련성 - 위에 적힌 문제를 실제로 해결하는 내용인가
 2) 실현 가능성 - 초등학생과 지역 주민이 실제로 해볼 수 있는가
 3) 공공성 - 나 혼자가 아니라 여러 사람에게 도움이 되는가
-4) 구체성 - 누가, 무엇을, 어떻게 하는지 알 수 있게 썼는가
+4) 구체성 - 누가, 무엇을, 어떻게 하는지 알 수 있게 썼는가${window.buildLearningBlock()}
 
 [반드시 '보완필요'로 판정해야 하는 경우]
 - 위에 적힌 문제와 상관없는 내용이거나, 장난으로 쓴 글일 때
@@ -681,7 +761,7 @@ window.getAIConsulting = async function() {
 1) 잘한 점: 홍보물·홍보 대상·슬로건 중에서 특히 잘 생각한 점을 구체적으로 칭찬해줘.
 2) 슬로건 다듬기: 지금 슬로건의 좋은 점을 짚어준 뒤, 홍보 대상의 눈에 더 잘 띄도록 고친 슬로건을 한 가지 제안해줘. 제안하는 슬로건은 따옴표로 감싸서 보여줘.
 3) 매체 추천: 홍보 대상에게 잘 닿을 매체(포스터, 영상, 안내 방송, 학교 게시판 등)를 한 가지 추천하고 이유도 짧게 알려줘.
-초등학교 4학년이 이해할 수 있는 쉬운 말로, 다정하게 4문장 이내로 써줘.`;
+초등학교 4학년이 이해할 수 있는 쉬운 말로, 다정하게 4문장 이내로 써줘.${window.buildLearningBlock()}`;
 
         const answer = await window.callGeminiAPI(prompt, null, { fast: true });   // [변경] 가벼운 조언 → 빠른 모드
         resText.innerHTML = answer.replace(/\n/g, '<br>');

@@ -1161,11 +1161,14 @@ window.ensureApiKeysReady = async function(maxWaitMs = 6000) {
     const originalConsulting = window.getAIConsulting;
 
     // 실제로 AI 응답을 받아온 경우에만 횟수를 차감한다
-    window.callGeminiAPI = async function(prompt, inlineData) {
+    // [2026-09-19 수정] 세 번째 인자(options)를 그대로 넘겨준다.
+    //   예전에는 (prompt, inlineData)만 받아서 { fast: true } 가 사라졌고,
+    //   그래서 '빠른 모드'가 한 번도 실제로 켜지지 않았습니다.
+    window.callGeminiAPI = async function(...args) {
         await window.ensureApiKeysReady();
         window.lastAICallAt = Date.now();
         window.startAICooldownUI();
-        const result = await originalCall.call(this, prompt, inlineData);
+        const result = await originalCall.apply(this, args);
         if (window.currentAIRequestType) {
             window.consumeAI(window.currentAIRequestType);
             window.currentAIRequestType = null;
