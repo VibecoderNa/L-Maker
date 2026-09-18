@@ -95,10 +95,10 @@ window.restoreMapMarkers = function() {
 window.saveMarker = function() {
     const placeName = document.getElementById('placeName').value.trim(); const legendDesc = document.getElementById('legendDesc').value.trim();
     if (!placeName || !legendDesc) return window.uiAlert("장소 이름과 기호의 뜻을 모두 적어주세요!", { title: '✏️ 빠진 내용이 있어요' });
-    // 지도에는 50px 크기로만 보이므로 150px로 줄여 저장한다 (용량 약 1/3)
+    // [2026-09-19 변경] 지도에는 최대 50px로만 보이므로 110px이면 충분합니다.
     const raw = canvas.toDataURL("image/png");
     if (raw.length < 1500) return window.uiAlert("기호를 먼저 그려주세요!", { title: '✏️ 기호가 비어 있어요' });
-    const dataURL = window.shrinkSymbol(canvas, 150);
+    const dataURL = window.shrinkSymbol(canvas, window.SYMBOL_SAVE_SIZE);
     const customIcon = L.icon({ iconUrl: dataURL, iconSize: [50, 50], iconAnchor: [25, 25], popupAnchor: [0, -28] });
 
     if (editingId !== null) {
@@ -126,19 +126,122 @@ window.saveMarker = function() {
     window.closeModal();
 }
 
-// 기호 그림을 작게 줄여 저장 공간을 아낀다
+// ==========================================
+// [2026-09-19 변경] 기호 그림 저장 용량 줄이기
+//   기호는 지도에서 50px, 범례에서 36px로만 보입니다.
+//   그런데 예전에는 150px PNG로 저장해 기호 하나가 약 17KB나 차지했습니다.
+//   35개만 모여도 약 600KB로, 학급 저장 공간(1MB)을 금방 채웠습니다.
+//   이제 110px로 줄이고, 용량이 훨씬 작은 WebP 형식을 함께 시도합니다.
+//   (WebP를 지원하지 않는 옛 브라우저에서는 자동으로 PNG를 사용합니다)
+// ==========================================
+window.SYMBOL_SAVE_SIZE = 110;      // 저장할 기호 그림의 한 변 길이(px)
+window.SYMBOL_WEBP_QUALITY = 0.85;  // WebP 화질 (0~1, 높을수록 선명하고 용량이 큼)
+
 window.shrinkSymbol = function(sourceCanvas, size) {
     try {
+        const px = size || window.SYMBOL_SAVE_SIZE;
         const small = document.createElement('canvas');
-        small.width = size; small.height = size;
+        small.width = px;
+        small.height = px;
         const sctx = small.getContext('2d');
         sctx.imageSmoothingQuality = 'high';
-        sctx.drawImage(sourceCanvas, 0, 0, size, size);
-        return small.toDataURL("image/png");
+        sctx.clearRect(0, 0, px, px);
+        sctx.drawImage(sourceCanvas, 0, 0, px, px);
+
+        // PNG와 WebP를 모두 만들어 본 뒤 더 작은 쪽을 고른다
+        let best = small.toDataURL("image/png");
+        try {
+            const webp = small.toDataURL("image/webp", window.SYMBOL_WEBP_QUALITY);
+            // 브라우저가 WebP를 모르면 PNG를 돌려주므로 형식을 꼭 확인한다
+            if (webp.indexOf('data:image/webp') === 0 && webp.length < best.length) best = webp;
+        } catch (e) { /* WebP 미지원 브라우저는 PNG를 그대로 사용 */ }
+
+        return best;
     } catch (e) {
         console.warn("기호 축소 실패, 원본을 사용합니다.", e);
         return sourceCanvas.toDataURL("image/png");
     }
+};
+
+// 이미 저장된 기호 그림 하나를 다시 작게 줄인다
+function reshrinkStoredSymbol(dataUrl, size) {
+    return new Promise((resolve, reject) => {
+        const img = new Image();
+        img.onload = function() {
+            try {
+                const c = document.createElement('canvas');
+                c.width = size;
+                c.height = size;
+                const cctx = c.getContext('2d');
+                cctx.imageSmoothingQuality = 'high';
+                cctx.clearRect(0, 0, size, size);
+                cctx.drawImage(img, 0, 0, size, size);
+                resolve(window.shrinkSymbol(c, size));
+            } catch (err) { reject(err); }
+        };
+        img.onerror = function() { reject(new Error("기호 그림을 읽지 못했습니다.")); };
+        img.src = dataUrl;
+    });
+}
+
+// ==========================================
+// [2026-09-19 추가] 이미 쌓인 기호 그림 일괄 정리 도구
+//   사용법: 선생님(또는 학생) 화면에서 F12 → 콘솔에 아래를 입력
+//           await window.compactMapSymbols()
+//   예전 방식(150px PNG)으로 저장된 기호들을 한 번에 다시 줄여 저장합니다.
+// ==========================================
+window.compactMapSymbols = async function(size) {
+    const px = size || window.SYMBOL_SAVE_SIZE;
+
+    if (!window.gameState || !Array.isArray(window.gameState.mapMarkers)) {
+        console.warn("[기호 정리] 지도 기호 자료를 찾지 못했습니다. 로그인 후 다시 실행해주세요.");
+        return null;
+    }
+
+    const markers = window.gameState.mapMarkers;
+    if (markers.length === 0) {
+        console.log("[기호 정리] 정리할 기호가 없습니다.");
+        return null;
+    }
+
+    const before = JSON.stringify(markers).length;
+    let done = 0;
+    let skipped = 0;
+
+    for (const m of markers) {
+        if (!m.imgData || typeof m.imgData !== 'string') { skipped++; continue; }
+        try {
+            const shrunk = await reshrinkStoredSymbol(m.imgData, px);
+            if (shrunk && shrunk.length < m.imgData.length) {
+                m.imgData = shrunk;
+                done++;
+            } else {
+                skipped++;   // 이미 충분히 작은 기호
+            }
+        } catch (e) {
+            console.warn("[기호 정리] 건너뜀:", m.placeName, e);
+            skipped++;
+        }
+    }
+
+    const after = JSON.stringify(markers).length;
+    const saved = before - after;
+    const percent = before > 0 ? Math.round((saved / before) * 100) : 0;
+
+    console.log(`[기호 정리] 압축 ${done}개 / 건너뜀 ${skipped}개`);
+    console.log(`[기호 정리] ${before.toLocaleString()} → ${after.toLocaleString()} 바이트 (${percent}% 감소, 약 ${Math.round(saved / 1024)}KB 확보)`);
+
+    if (done > 0) {
+        window.restoreMapMarkers();
+        await window.saveClassState();
+        if (window.showNotification) {
+            window.showNotification(`지도 기호 ${done}개를 정리했습니다. 저장 공간 약 ${Math.round(saved / 1024)}KB를 확보했어요!`);
+        }
+    } else {
+        console.log("[기호 정리] 줄일 수 있는 기호가 없어 저장하지 않았습니다.");
+    }
+
+    return { before: before, after: after, done: done, skipped: skipped };
 };
 
 window.deleteMarker = async function(id) {

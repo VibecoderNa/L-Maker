@@ -624,17 +624,28 @@ window.getBase64 = function(file) {
                 try {
                     const canvas = document.createElement('canvas');
                     let w = img.width; let h = img.height;
-                    // 화면에는 최대 250px 정도로만 보여주므로 320px면 충분합니다.
-                    // 용량을 절반 가까이 줄여 학급 저장 공간을 아낍니다.
-                    const MAX = 320;
+                    // [2026-09-19 변경] 화면에는 최대 250px로만 보이므로 260px이면 충분합니다.
+                    // 학급 저장 공간(1MB)이 사진 때문에 금방 차는 것을 막습니다.
+                    const MAX = 260;
                     if(w > h) { if(w > MAX) { h *= MAX/w; w = MAX; } } else { if(h > MAX) { w *= MAX/h; h = MAX; } }
                     canvas.width = w; canvas.height = h;
                     const ctx = canvas.getContext('2d');
                     ctx.fillStyle = '#ffffff';
                     ctx.fillRect(0, 0, w, h);
                     ctx.drawImage(img, 0, 0, w, h);
-                    const dataUrl = canvas.toDataURL('image/jpeg', 0.55);
-                    resolve({ inlineData: { data: dataUrl.split(',')[1], mimeType: 'image/jpeg' }, dataUrl: dataUrl });
+                    // [2026-09-19 변경] JPEG와 WebP를 모두 만들어 더 작은 쪽을 고릅니다.
+                    //   WebP는 같은 화질에서 용량이 30% 정도 작습니다.
+                    //   옛 브라우저가 WebP를 모르면 자동으로 JPEG를 사용합니다.
+                    let dataUrl = canvas.toDataURL('image/jpeg', 0.5);
+                    let mime = 'image/jpeg';
+                    try {
+                        const webp = canvas.toDataURL('image/webp', 0.55);
+                        if (webp.indexOf('data:image/webp') === 0 && webp.length < dataUrl.length) {
+                            dataUrl = webp;
+                            mime = 'image/webp';
+                        }
+                    } catch (e) { /* WebP 미지원 브라우저는 JPEG 사용 */ }
+                    resolve({ inlineData: { data: dataUrl.split(',')[1], mimeType: mime }, dataUrl: dataUrl });
                 } catch (err) { reject(err); }
             };
             img.onerror = () => reject(new Error("이미지를 읽을 수 없습니다. (지원하지 않는 형식일 수 있어요)"));
