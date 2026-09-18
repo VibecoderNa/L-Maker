@@ -861,7 +861,8 @@ window.likeCampaign = async function(id, targetAuthorKey) {
     if (!campaign.likedBy) campaign.likedBy = [];
     campaign.likedBy.push(window.userKey);
 
-    window.updateUI();
+    window.updateUI(true);
+    window.saveClassState();      // 좋아요 수는 학급 공용 자료이므로 함께 저장
     window.renderSharedMarketingBoard();
 
     try {
@@ -960,7 +961,9 @@ window.updateUI = function(skipSave = false) {
     if (repEl) repEl.innerText = window.gameState.reputation.toLocaleString();
     if (satEl) satEl.innerText = Math.min(100, Math.floor((window.gameState.satisfaction / 540) * 100));
 
-    if (!skipSave) window.saveGameState();
+    // 상단 지표(예산·방문객 등)는 나만의 값이므로 내 문서만 저장한다.
+    // 학급 공용 자료를 바꾼 곳에서는 saveClassState()를 따로 호출합니다.
+    if (!skipSave) window.saveStudentState();
     window.updateTycoonLevel();
     window.renderBuildings();
 }

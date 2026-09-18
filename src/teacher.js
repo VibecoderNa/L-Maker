@@ -120,7 +120,9 @@ window.renderStudentMonitor = function() {
     studentKeys.forEach(sNum => {
         const sData = window.allStudentsData[sNum];
         const sat = sData.satisfaction || 0;
-        const isOnline = sData.isOnline === true;
+        // 접속 여부는 presence 컬렉션 기준 (10분 이상 신호가 없으면 오프라인)
+        const pres = (window.presenceData && window.presenceData[sNum]) || {};
+        const isOnline = pres.isOnline === true && (Date.now() - (pres.lastSeen || 0)) < 10 * 60 * 1000;
         let cLevel = window.districtLevels[0].name;
         for (let lvl of window.districtLevels) { if (sat >= lvl.threshold) cLevel = lvl.name; }
 

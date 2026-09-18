@@ -11,7 +11,15 @@ window.map = map;
 L.control.zoom({ position: 'bottomright' }).addTo(map);
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '&copy; OpenStreetMap contributors', maxZoom: 19 }).addTo(map);
 
-let markerIdCounter = 0; const markerDB = {}; let editingId = null; let clickedLatLng = null; let isLegendEmpty = true;
+// 기호 고유번호는 시각(ms)으로 만든다.
+// 예전처럼 0,1,2… 로 세면 학생마다 같은 번호가 생겨 서로의 기호가 지워졌습니다.
+window.makeMarkerId = function() {
+    let id = Date.now();
+    while (window.gameState && window.gameState.mapMarkers && window.gameState.mapMarkers.some(m => m.id === id)) id++;
+    return id;
+};
+
+const markerDB = {}; let editingId = null; let clickedLatLng = null; let isLegendEmpty = true;
 const modal = document.getElementById('drawingModal'); const canvas = document.getElementById('symbolCanvas'); const ctx = canvas.getContext('2d');
 map.on('click', function(e) { editingId = null; clickedLatLng = e.latlng; window.openModal(); });
 
@@ -58,7 +66,7 @@ window.togglePanel = function(panelId, iconId) {
 window.restoreMapMarkers = function() {
     if (!window.gameState.mapMarkers) window.gameState.mapMarkers = [];
     for (let id in markerDB) { if(markerDB[id].leafletMarker) map.removeLayer(markerDB[id].leafletMarker); delete markerDB[id]; }
-    markerIdCounter = 0; const legendList = document.getElementById('legendList'); legendList.innerHTML = ''; isLegendEmpty = true;
+    const legendList = document.getElementById('legendList'); legendList.innerHTML = ''; isLegendEmpty = true;
     
     window.gameState.mapMarkers.forEach(mData => {
         const customIcon = L.icon({ iconUrl: mData.imgData, iconSize: [50, 50], iconAnchor: [25, 25], popupAnchor: [0, -28] });
@@ -71,7 +79,6 @@ window.restoreMapMarkers = function() {
         marker.bindPopup(`<div class="custom-popup"><h3>${mData.placeName}</h3><p>${mData.legendDesc}</p>${editBtnHtml}</div>`);
         const legendItem = window.addToLegend(mData.imgData, mData.placeName, mData.id);
         markerDB[mData.id] = { leafletMarker: marker, legendElement: legendItem, latlng: mData.latlng, placeName: mData.placeName, legendDesc: mData.legendDesc, imgData: mData.imgData, author: mData.author };
-        if(mData.id >= markerIdCounter) markerIdCounter = mData.id + 1;
     });
     
     if (window.gameState.mapMarkers.length === 0) { 
@@ -87,8 +94,11 @@ window.restoreMapMarkers = function() {
 
 window.saveMarker = function() {
     const placeName = document.getElementById('placeName').value.trim(); const legendDesc = document.getElementById('legendDesc').value.trim();
-    if (!placeName || !legendDesc) return alert("장소와 설명을 적어주세요!");
-    const dataURL = canvas.toDataURL("image/png"); if (dataURL.length < 500) return alert("기호를 그려주세요!");
+    if (!placeName || !legendDesc) return window.uiAlert("장소 이름과 기호의 뜻을 모두 적어주세요!", { title: '✏️ 빠진 내용이 있어요' });
+    // 지도에는 50px 크기로만 보이므로 150px로 줄여 저장한다 (용량 약 1/3)
+    const raw = canvas.toDataURL("image/png");
+    if (raw.length < 1500) return window.uiAlert("기호를 먼저 그려주세요!", { title: '✏️ 기호가 비어 있어요' });
+    const dataURL = window.shrinkSymbol(canvas, 150);
     const customIcon = L.icon({ iconUrl: dataURL, iconSize: [50, 50], iconAnchor: [25, 25], popupAnchor: [0, -28] });
 
     if (editingId !== null) {
@@ -100,7 +110,7 @@ window.saveMarker = function() {
         const gMarker = window.gameState.mapMarkers.find(m => m.id === editingId); if(gMarker) { gMarker.placeName = placeName; gMarker.legendDesc = legendDesc; gMarker.imgData = dataURL; }
         data.leafletMarker.openPopup();
     } else {
-        const newId = markerIdCounter++; 
+        const newId = window.makeMarkerId(); 
         const pureLatLng = { lat: clickedLatLng.lat, lng: clickedLatLng.lng };
         const marker = L.marker(pureLatLng, { icon: customIcon }).addTo(map);
         const editBtnHtml = `<div style="display:flex; gap:5px;"><button onclick="window.editMarker(${newId})" style="flex:1;"><i class="fa-solid fa-pen"></i> 관리</button><button onclick="window.deleteMarker(${newId})" style="background:rgba(239, 68, 68, 0.8); width:auto; padding: 6px 10px;"><i class="fa-solid fa-trash"></i></button></div>`;
@@ -111,16 +121,35 @@ window.saveMarker = function() {
         marker.openPopup();
         if(!window.isTeacherMode) { window.gameState.budget += 50; window.showNotification(`새로운 기호를 추가하여 50G를 획득했습니다!`); }
     }
-    window.updateUI(); window.closeModal();
+    window.updateUI();          // 내 예산 저장
+    window.saveClassState();    // 지도 기호는 학급 공용 자료
+    window.closeModal();
 }
 
-window.deleteMarker = function(id) {
-    if(!confirm("⚠️ 이 기호를 지도에서 완전히 삭제하시겠습니까?")) return;
+// 기호 그림을 작게 줄여 저장 공간을 아낀다
+window.shrinkSymbol = function(sourceCanvas, size) {
+    try {
+        const small = document.createElement('canvas');
+        small.width = size; small.height = size;
+        const sctx = small.getContext('2d');
+        sctx.imageSmoothingQuality = 'high';
+        sctx.drawImage(sourceCanvas, 0, 0, size, size);
+        return small.toDataURL("image/png");
+    } catch (e) {
+        console.warn("기호 축소 실패, 원본을 사용합니다.", e);
+        return sourceCanvas.toDataURL("image/png");
+    }
+};
+
+window.deleteMarker = async function(id) {
+    const ok = await window.uiConfirm("이 기호를 지도에서 완전히 지웁니다.\n지운 기호는 되돌릴 수 없습니다.",
+        { title: '🗑️ 기호를 삭제할까요?', okText: '삭제하기', cancelText: '취소', danger: true });
+    if (!ok) return;
     const data = markerDB[id];
     if(data && data.leafletMarker) map.removeLayer(data.leafletMarker);
     delete markerDB[id];
     window.gameState.mapMarkers = window.gameState.mapMarkers.filter(m => m.id !== id);
-    window.restoreMapMarkers(); window.saveGameState();
+    window.restoreMapMarkers(); window.saveClassState();
     window.showNotification("지도 기호가 성공적으로 삭제되었습니다.");
 }
 
@@ -133,7 +162,8 @@ window.addToLegend = function(imgSrc, name, markerId) {
 
 window.editMarker = function(id) {
     const data = markerDB[id];
-    if (!window.isTeacherMode && data.author && data.author !== window.currentUserId) return alert("자신이 등록한 기호만 수정할 수 있습니다!");
+    if (!data) return;
+    if (!window.isTeacherMode && data.author && data.author !== window.currentUserId) return window.uiAlert("자기가 만든 기호만 고칠 수 있어요!", { title: '🔒 수정할 수 없어요' });
     editingId = id; document.getElementById('placeName').value = data.placeName; document.getElementById('legendDesc').value = data.legendDesc;
     const img = new Image(); img.onload = function() { window.clearCanvas(); ctx.drawImage(img, 0, 0); }; img.src = data.imgData;
     window.openModal(); data.leafletMarker.closePopup(); 
@@ -307,7 +337,7 @@ function refreshGeoMarkers() {
 function drawGeoPolyline() {
     if(geoPolyline) geoMapObj.removeLayer(geoPolyline);
     const latlngs = [window.geoSelection.a.latlng, window.geoSelection.b.latlng];
-    geoPolyline = L.polyline(latlngs, {color: 'var(--accent)', weight: 4, dashArray: '5, 5'}).addTo(geoMapObj);
+    geoPolyline = L.polyline(latlngs, {color: '#ea580c', weight: 4, dashArray: '5, 5'}).addTo(geoMapObj);
     
     geoMapObj.fitBounds(geoPolyline.getBounds(), {
         paddingTopLeft: [380, 50], 
@@ -339,7 +369,7 @@ window.resetGeoSelection = function() {
 }
 
 window.analyzeDistanceAndBearing = function() {
-    if(!window.geoSelection.a || !window.geoSelection.b) return alert("지도에서 출발지와 도착지를 모두 클릭하여 선택해주세요.");
+    if(!window.geoSelection.a || !window.geoSelection.b) return window.uiAlert("지도에서 출발지와 도착지를 모두 클릭해주세요.", { title: '📍 두 곳을 선택해주세요' });
     
     const lat1 = window.geoSelection.a.latlng.lat; const lng1 = window.geoSelection.a.latlng.lng;
     const lat2 = window.geoSelection.b.latlng.lat; const lng2 = window.geoSelection.b.latlng.lng;
@@ -519,7 +549,7 @@ window.resetElevSelection = function() {
 }
 
 window.fetchAndDrawElevationProfile = async function() {
-    if(!window.elevSelection.a || !window.elevSelection.b) return alert("지도 위에서 기호 2개를 모두 선택해주세요.");
+    if(!window.elevSelection.a || !window.elevSelection.b) return window.uiAlert("지도 위에서 기호 2개를 모두 선택해주세요.", { title: '📍 두 곳을 선택해주세요' });
 
     const lat1 = window.elevSelection.a.latlng.lat; const lng1 = window.elevSelection.a.latlng.lng;
     const lat2 = window.elevSelection.b.latlng.lat; const lng2 = window.elevSelection.b.latlng.lng;
@@ -581,6 +611,6 @@ window.fetchAndDrawElevationProfile = async function() {
 
     } catch (error) {
         console.error("고도 분석 오류:", error);
-        alert("데이터를 불러오는 데 실패했습니다. 잠시 후 다시 시도해주세요.");
+        window.uiAlert("땅의 높낮이 정보를 불러오지 못했습니다.\n잠시 후 다시 시도해주세요.", { title: '⛰️ 자료를 못 받았어요' });
     }
 }

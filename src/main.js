@@ -55,7 +55,7 @@ window.DEFAULT_AI_MODEL = "gemini-3.8-flash";
 window.isTeacherMode = false; window.dynamicApiKey = ""; window.dynamicApiKeys = []; window.dynamicApiModel = ""; window.classKey = ''; window.userKey = ''; window.currentUserId = ''; 
 window.gameState = { budget: 500, visitorCount: 0, reputation: 0, satisfaction: 0, submittedProposals: [], problems: [], promoBoard: [], marketingCampaigns: [], builtBuildings: [], mapMarkers: [], mapCenter: null, aiUsage: { date: '', advice: 0, consulting: 0 } };
 window.currentSelectedProblem = null; window.currentSelectedPromo = null;
-window.allStudentsData = {}; window.classDataLoaded = false; window.studentDataLoaded = false;
+window.allStudentsData = {}; window.presenceData = {}; window.classDataLoaded = false; window.studentDataLoaded = false;
 window.initialMapCenterSet = false;
 
 // 이 브라우저를 구분하는 값 (번호 중복 접속을 막는 데 씁니다)
@@ -71,16 +71,24 @@ window.getDeviceId = function() {
 // 접속 중임을 주기적으로 알린다 (2분마다)
 // 브라우저가 갑자기 꺼져도 5분이 지나면 번호가 자동으로 풀립니다.
 window.heartbeatTimer = null;
+// ★ 접속 상태는 학생 문서가 아니라 별도 컬렉션(presence)에 기록합니다.
+//   학생 문서는 실시간 구독 중이라, 거기에 쓰면 '쓰기 → 알림 → 또 쓰기'의
+//   무한 고리가 생겨 하루 할당량이 순식간에 소진됩니다.
+window.presenceRef = function(num) {
+    return doc(db, "classes", window.classKey, "presence", String(num));
+};
+
 window.startHeartbeat = function() {
     if (window.heartbeatTimer) clearInterval(window.heartbeatTimer);
     const beat = () => {
         if (window.isTeacherMode || !window.classKey || !window.userKey) return;
-        setDoc(doc(db, "classes", window.classKey, "students", window.userKey),
+        setDoc(window.presenceRef(window.userKey),
             { isOnline: true, lastSeen: Date.now(), deviceId: window.getDeviceId() }, { merge: true })
             .catch(() => {});
     };
     beat();
-    window.heartbeatTimer = setInterval(beat, 120000);
+    // 5분 간격으로 줄여 데이터베이스 사용량을 아낍니다
+    window.heartbeatTimer = setInterval(beat, 300000);
 };
 
 window.getTodayStr = function() { const d = new Date(); const offset = d.getTimezoneOffset() * 60000; const kstTime = new Date(d.getTime() - offset + (9 * 60 * 60000)); return kstTime.toISOString().split('T')[0]; }
@@ -112,7 +120,15 @@ window.executeLogout = async function(e) {
         { title: '👋 로그아웃할까요?', okText: '로그아웃', cancelText: '더 할래요' });
     if (!ok) return;
     if(!window.isTeacherMode && window.classKey && window.userKey) {
-        try { document.body.style.opacity = '0.5'; if (window.heartbeatTimer) clearInterval(window.heartbeatTimer); await setDoc(doc(db, "classes", window.classKey, "students", window.userKey), { isOnline: false, lastSeen: 0 }, { merge: true }); } catch(err) { console.error("로그아웃 오류:", err); }
+        document.body.style.opacity = '0.5';
+        if (window.heartbeatTimer) { clearInterval(window.heartbeatTimer); window.heartbeatTimer = null; }
+        try {
+            // 저장이 늦어져도 로그아웃은 반드시 진행되도록 2초만 기다린다
+            await Promise.race([
+                setDoc(window.presenceRef(window.userKey), { isOnline: false, lastSeen: 0 }, { merge: true }),
+                new Promise(resolve => setTimeout(resolve, 2000))
+            ]);
+        } catch(err) { console.error("로그아웃 오류:", err); }
     }
     location.reload(); 
 };
@@ -222,14 +238,34 @@ window.resetClassAiUsage = async function() {
 
     const today = window.getTodayStr();
     let success = 0;
-    for (const k of keys) {
-        try {
-            await setDoc(doc(db, "classes", window.classKey, "students", k),
-                { aiUsage: { date: today, advice: 0, consulting: 0 } }, { merge: true });
-            success++;
-        } catch (e) { console.error("초기화 실패:", k, e); }
+    let lastError = null;
+
+    // 한 명씩 기다리지 않고 한꺼번에 처리한다 (훨씬 빠름)
+    const results = await Promise.allSettled(keys.map(k =>
+        setDoc(doc(db, "classes", window.classKey, "students", k),
+            { aiUsage: { date: today, advice: 0, consulting: 0 } }, { merge: true })
+    ));
+    results.forEach(r => {
+        if (r.status === 'fulfilled') success++;
+        else lastError = r.reason;
+    });
+
+    if (success === keys.length) {
+        window.showNotification(`${success}명의 AI 사용 횟수를 초기화했습니다.`);
+    } else {
+        console.error("AI 횟수 초기화 실패:", lastError);
+        const code = String((lastError && lastError.code) || '');
+        const msg = String((lastError && lastError.message) || '');
+        if (code.includes("resource-exhausted") || msg.includes("Quota exceeded")) {
+            await window.uiAlert(
+                `${keys.length}명 중 ${success}명만 초기화되었습니다.\n\n오늘 데이터베이스에 저장할 수 있는 양을 모두 사용했습니다.\nFirebase 콘솔의 '사용량'을 확인해주세요. (내일 0시에 자동으로 회복됩니다)`,
+                { title: '⚠️ 저장 한도를 초과했습니다' });
+        } else {
+            await window.uiAlert(`${keys.length}명 중 ${success}명만 초기화되었습니다.\n인터넷 연결을 확인하고 다시 시도해주세요.`,
+                { title: '⚠️ 초기화를 마치지 못했습니다' });
+        }
     }
-    window.showNotification(`${success}명의 AI 사용 횟수를 초기화했습니다.`);
+    window.renderStudentMonitor();
 };
 
 // ==========================================
@@ -527,15 +563,15 @@ window.initSystem = async function(isTeacherModeParam = false) {
             
             // 같은 번호로 다른 친구가 이미 접속해 있는지 확인한다
             try {
-                const sSnap = await getDoc(doc(db, "classes", fullCode, "students", n));
+                const sSnap = await getDoc(doc(db, "classes", fullCode, "presence", String(n)));
                 if (sSnap.exists()) {
                     const sData = sSnap.data();
                     const lastSeen = sData.lastSeen || 0;
-                    const stillFresh = (Date.now() - lastSeen) < 5 * 60 * 1000;   // 5분
+                    const stillFresh = (Date.now() - lastSeen) < 12 * 60 * 1000;   // 12분
                     const otherDevice = sData.deviceId && sData.deviceId !== window.getDeviceId();
                     if (sData.isOnline === true && stillFresh && otherDevice) {
                         document.getElementById('loadingScreen').style.display = 'none';
-                        window.showNotification(`${n}번은 지금 다른 친구가 사용 중이에요. 다른 번호로 접속해주세요. (5분 뒤에는 자동으로 풀립니다)`);
+                        window.showNotification(`${n}번은 지금 다른 친구가 사용 중이에요. 다른 번호로 접속해주세요. (잠시 뒤 자동으로 풀립니다)`);
                         return setTimeout(() => location.reload(), 3000);
                     }
                 }
@@ -543,7 +579,14 @@ window.initSystem = async function(isTeacherModeParam = false) {
 
             window.classKey = fullCode; 
             window.userKey = n; 
-            window.currentUserId = n; 
+            window.currentUserId = n;
+
+            // 이 번호를 지금 내가 쓰고 있다고 곧바로 기록한다
+            // (신호를 기다리지 않아야 바로 뒤에 들어오는 친구를 막을 수 있습니다)
+            try {
+                await setDoc(doc(db, "classes", fullCode, "presence", String(n)),
+                    { isOnline: true, lastSeen: Date.now(), deviceId: window.getDeviceId() }, { merge: true });
+            } catch (e) { console.warn("접속 기록을 남기지 못했습니다.", e); }
         }
         window.dynamicApiKey = ""; window.dynamicApiKeys = []; window.dynamicApiModel = ""; 
     } else {
@@ -730,7 +773,7 @@ window.initSystem = async function(isTeacherModeParam = false) {
                     window.gameState.satisfaction = 0; 
                     window.gameState.builtBuildings = []; 
                     window.gameState.aiUsage = { date: window.getTodayStr(), advice: 0, consulting: 0 };
-                    setDoc(doc(db, "classes", window.classKey, "students", window.userKey), { budget: window.gameState.budget, visitorCount: window.gameState.visitorCount, reputation: window.gameState.reputation, satisfaction: window.gameState.satisfaction, builtBuildings: window.gameState.builtBuildings, aiUsage: window.gameState.aiUsage, isOnline: true }, { merge: true });
+                    setDoc(doc(db, "classes", window.classKey, "students", window.userKey), { budget: window.gameState.budget, visitorCount: window.gameState.visitorCount, reputation: window.gameState.reputation, satisfaction: window.gameState.satisfaction, builtBuildings: window.gameState.builtBuildings, aiUsage: window.gameState.aiUsage }, { merge: true });
                 }
 
                 window.ensureAiUsageToday();
@@ -768,6 +811,14 @@ window.initSystem = async function(isTeacherModeParam = false) {
                 setTimeout(() => { document.getElementById('loadingScreen').style.display = 'none'; }, 1500);
             });
         } else {
+            // 접속 상태는 별도 컬렉션에서 가져온다
+            window.presenceData = {};
+            onSnapshot(collection(db, "classes", window.classKey, "presence"), (snap) => {
+                window.presenceData = {};
+                snap.forEach((d) => { window.presenceData[d.id] = d.data(); });
+                try { window.renderStudentMonitor(); } catch(e) {}
+            });
+
             onSnapshot(collection(db, "classes", window.classKey, "students"), (snapshot) => {
                 window.allStudentsData = {}; snapshot.forEach((doc) => { window.allStudentsData[doc.id] = doc.data(); }); window.renderStudentMonitor();
                 if(document.getElementById('monitorDetailView').style.display === 'block') { const currentlyViewingNum = document.getElementById('dtNum').innerText; if(currentlyViewingNum) window.showStudentDetails(currentlyViewingNum); }
@@ -777,15 +828,83 @@ window.initSystem = async function(isTeacherModeParam = false) {
     } else { setTimeout(() => { document.getElementById('loadingScreen').style.display = 'none'; }, 1000); }
 };
 
+// ★ 탭을 오갈 때마다 저장하지 않도록 상태를 기억한다
+window.offlineMarked = false;
+
 const handleOffline = () => {
+    if (window.isTeacherMode || !window.classKey || !window.userKey) return;
+    if (window.offlineMarked) return;              // 이미 기록했으면 다시 쓰지 않는다
+    window.offlineMarked = true;
     if (window.heartbeatTimer) { clearInterval(window.heartbeatTimer); window.heartbeatTimer = null; }
-    if(!window.isTeacherMode && window.classKey && window.userKey) {
-        setDoc(doc(db, "classes", window.classKey, "students", window.userKey), { isOnline: false, lastSeen: 0 }, { merge: true });
+    window.heartbeatStarted = false;
+    setDoc(window.presenceRef(window.userKey), { isOnline: false, lastSeen: 0 }, { merge: true }).catch(() => {});
+};
+
+const handleOnlineAgain = () => {
+    if (window.isTeacherMode || !window.classKey || !window.userKey) return;
+    if (!window.offlineMarked) return;
+    window.offlineMarked = false;
+    window.startHeartbeat();                        // 돌아오면 다시 신호를 보낸다
+};
+
+window.addEventListener('pagehide', handleOffline);
+window.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') handleOffline();
+    else handleOnlineAgain();
+});
+
+// ★ 저장을 '학급 문서'와 '내 문서'로 나눕니다.
+//   학급 문서는 반 전체가 구독 중이라, 한 번 쓰면 인원수만큼 읽기가 발생합니다.
+//   예산처럼 나만의 값이 바뀐 경우에는 학급 문서를 건드리지 않아야 합니다.
+window.canSaveNow = function() {
+    if(!window.classKey || window.classKey === 'teacher_temp_global') return false;
+    if(!window.isTeacherMode && (!window.classDataLoaded || !window.studentDataLoaded)) return false;
+    if(window.isTeacherMode && !window.classDataLoaded) return false;
+    return true;
+};
+
+// 나의 지표만 저장 (반 친구들에게 알림이 가지 않습니다)
+window.saveStudentState = async function() {
+    if (!window.canSaveNow() || window.isTeacherMode) return;
+    try {
+        await setDoc(doc(db, "classes", window.classKey, "students", window.userKey), {
+            budget: window.gameState.budget,
+            visitorCount: window.gameState.visitorCount,
+            reputation: window.gameState.reputation,
+            satisfaction: window.gameState.satisfaction,
+            builtBuildings: window.gameState.builtBuildings
+        }, { merge: true });
+    } catch (e) { window.reportSaveError(e); }
+};
+
+// 학급 공용 자료만 저장 (게시판·제안서·홍보·지도 기호가 바뀌었을 때만)
+window.saveClassState = async function() {
+    if (!window.canSaveNow()) return;
+    try {
+        await setDoc(doc(db, "classes", window.classKey), {
+            problems: window.gameState.problems,
+            submittedProposals: window.gameState.submittedProposals,
+            promoBoard: window.gameState.promoBoard,
+            marketingCampaigns: window.gameState.marketingCampaigns,
+            mapMarkers: window.gameState.mapMarkers
+        }, { merge: true });
+    } catch (e) { window.reportSaveError(e); }
+};
+
+window.reportSaveError = function(e) {
+    console.error("DB 저장 에러:", e);
+    const code = String((e && e.code) || '');
+    const msg = String((e && e.message) || '');
+    if (code.includes("resource-exhausted") || msg.includes("Quota exceeded")) {
+        window.showNotification("⚠️ 오늘 저장 가능한 양을 모두 사용했습니다. 선생님께 알려주세요!");
+    } else if (msg.includes("longer than") || code.includes("invalid-argument")) {
+        window.showNotification("⚠️ 저장 공간이 가득 찼습니다! 선생님께 알려주세요. (사진이나 기호를 정리해야 합니다)");
+    } else {
+        window.showNotification("⚠️ 저장에 실패했습니다. 인터넷 연결을 확인해주세요.");
     }
 };
-window.addEventListener('pagehide', handleOffline); 
-window.addEventListener('visibilitychange', () => { if(document.visibilityState === 'hidden') handleOffline(); });
 
+// 둘 다 저장 (학급 자료와 내 지표가 함께 바뀐 경우)
 window.saveGameState = async function() {
     if(!window.classKey || window.classKey === 'teacher_temp_global') return;
     if(!window.isTeacherMode && (!window.classDataLoaded || !window.studentDataLoaded)) return;
@@ -810,7 +929,11 @@ window.saveGameState = async function() {
         }
     } catch (e) { 
         console.error("DB 저장 에러:", e); 
-        if (String(e && e.message).includes("longer than") || String(e && e.code).includes("invalid-argument")) {
+        const code = String((e && e.code) || '');
+        const msg = String((e && e.message) || '');
+        if (code.includes("resource-exhausted") || msg.includes("Quota exceeded")) {
+            window.showNotification("⚠️ 오늘 저장 가능한 양을 모두 사용했습니다. 선생님께 알려주세요!");
+        } else if (msg.includes("longer than") || code.includes("invalid-argument")) {
             window.showNotification("⚠️ 저장 공간이 가득 찼습니다! 선생님께 알려주세요. (사진이나 기호를 정리해야 합니다)");
         } else {
             window.showNotification("⚠️ 저장에 실패했습니다. 인터넷 연결을 확인해주세요.");
