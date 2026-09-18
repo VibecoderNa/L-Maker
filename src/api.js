@@ -50,19 +50,31 @@ window.startTipRotation = function(elementId, intervalMs = 10000) {
             if (el2) { el2.innerText = window.aiLoadingTips[idx]; el2.style.opacity = '1'; }
         }, 250);
     }, intervalMs);
+
+    // [2026-09-19 추가] 경과 시간을 1초마다 표시합니다.
+    //   숫자가 계속 올라가야 "멈춘 것"이 아니라 "일하는 중"으로 보입니다.
+    const startedAt = Date.now();
+    window.tipTimers[elementId + '-sec'] = setInterval(() => {
+        const secEl = document.getElementById(elementId + '-sec');
+        if (!secEl) return;
+        secEl.innerText = `${Math.floor((Date.now() - startedAt) / 1000)}초`;
+    }, 1000);
 };
 
 window.stopTipRotation = function(elementId) {
-    if (window.tipTimers[elementId]) {
-        clearInterval(window.tipTimers[elementId]);
-        delete window.tipTimers[elementId];
-    }
+    [elementId, elementId + '-sec'].forEach(key => {
+        if (window.tipTimers[key]) {
+            clearInterval(window.tipTimers[key]);
+            delete window.tipTimers[key];
+        }
+    });
 };
 
 // 기다리는 동안 보여줄 인라인 안내 상자
 window.buildWaitingBox = function(title, tipElementId) {
     return `<div style="display:flex; align-items:center; gap:8px; font-weight:bold; color:var(--primary);">
         <i class="fa-solid fa-spinner fa-spin"></i> ${title}
+        <span id="${tipElementId}-sec" style="margin-left:auto; font-size:13px; font-weight:bold; color:var(--text-muted);">0초</span>
     </div>
     <div style="margin-top:12px; padding:12px 14px; background:#ffffff; border-radius:8px; border:1px dashed var(--border-color);">
         <div style="font-size:12px; font-weight:bold; color:var(--primary); margin-bottom:6px;">💡 기다리는 동안 알아두면 좋아요</div>
@@ -80,7 +92,12 @@ window.getUsableApiKeys = function() {
     return all.map(k => String(k).trim()).filter(k => k.length > 0);
 }
 
-window.callGeminiAPI = async function(prompt, inlineData = null) {
+// options.fast = true  →  '빠른 모드'
+//   AI 비서 힌트, 홍보 컨설팅처럼 판정이 필요 없는 가벼운 조언에 씁니다.
+//   생각 과정을 최소로 줄여 응답이 2~4초 빨라집니다.
+//   제안서·홍보 심사처럼 판정이 필요한 곳에서는 쓰지 않습니다.
+window.callGeminiAPI = async function(prompt, inlineData = null, options = {}) {
+    const fast = options && options.fast === true;
     const allKeys = window.getUsableApiKeys();
     if (allKeys.length === 0) {
         const e = new Error("NO_API_KEY");
@@ -113,10 +130,16 @@ window.callGeminiAPI = async function(prompt, inlineData = null) {
     // (초등 수업용 짧은 답변에는 깊은 추론이 필요 없습니다)
     // 혹시 모델이 이 항목을 지원하지 않으면 아래 400 처리에서 자동으로 빼고 다시 시도합니다.
     // [2026-09-19 변경] maxOutputTokens를 넉넉히 지정해 답변이 중간에 끊기는 것을 막습니다.
-    const buildBody = (useThinking, maxTokens = 4096) => {
-        const gc = { maxOutputTokens: maxTokens };
+    // [2026-09-19 변경] 빠른 모드에서는 생각 수준을 최소로 낮추고 출력 한도도 줄입니다.
+    //   모델이 MINIMAL을 지원하지 않으면 아래 400 처리에서 자동으로 LOW로 내려갑니다.
+    if (window.geminiFastThinkingLevel === undefined) window.geminiFastThinkingLevel = "MINIMAL";
+    const defaultMaxTokens = fast ? 1024 : 4096;
+
+    const buildBody = (useThinking, maxTokens) => {
+        const gc = { maxOutputTokens: maxTokens || defaultMaxTokens };
         if (useThinking && /^gemini-3/.test(model)) {
-            gc.thinkingConfig = { thinkingLevel: "LOW" };
+            gc.thinkingConfig = { thinkingLevel: fast ? window.geminiFastThinkingLevel : "LOW" };
+            if (fast) gc.temperature = 0.7;
         } else {
             gc.temperature = 0.7;
         }
@@ -211,13 +234,25 @@ window.callGeminiAPI = async function(prompt, inlineData = null) {
                 }
 
                 // 400인데 설정(generationConfig) 문제라면, 키 문제가 아니라 요청 형식 문제다.
-                // 사고 수준 설정을 빼고 한 번 더 시도한다.
-                if (response.status === 400 && window.geminiUseThinkingConfig &&
-                    /thinking|generation_?config|generationConfig|Unknown name/i.test(detail)) {
-                    console.warn("[AI] 이 모델은 사고 수준 설정을 지원하지 않습니다. 설정을 빼고 다시 시도합니다.");
-                    window.geminiUseThinkingConfig = false;
-                    body = buildBody(false);
-                    continue;
+                // 400인데 설정(generationConfig) 문제라면, 키 문제가 아니라 요청 형식 문제다.
+                if (response.status === 400 &&
+                    /thinking|generation_?config|generationConfig|Unknown name|Invalid value/i.test(detail)) {
+
+                    // [2026-09-19 추가] 빠른 모드의 생각 수준(MINIMAL)을 모르는 모델이면 LOW로 내린다.
+                    if (fast && window.geminiUseThinkingConfig && window.geminiFastThinkingLevel === "MINIMAL") {
+                        console.warn("[AI] 이 모델은 MINIMAL 생각 수준을 지원하지 않습니다. LOW로 내려 다시 시도합니다.");
+                        window.geminiFastThinkingLevel = "LOW";
+                        body = buildBody(window.geminiUseThinkingConfig);
+                        continue;
+                    }
+
+                    // 그래도 안 되면 사고 수준 설정 자체를 빼고 한 번 더 시도한다.
+                    if (window.geminiUseThinkingConfig) {
+                        console.warn("[AI] 이 모델은 사고 수준 설정을 지원하지 않습니다. 설정을 빼고 다시 시도합니다.");
+                        window.geminiUseThinkingConfig = false;
+                        body = buildBody(false);
+                        continue;
+                    }
                 }
 
                 // 그 외 400 / 403 등 → 키 자체가 잘못됨. 이번 접속 동안 이 키는 제외
@@ -267,9 +302,11 @@ window.showAILoading = function() {
         const el = document.getElementById('aiLoadingStatus');
         if (!el) return;
         const sec = Math.floor((Date.now() - startedAt) / 1000);
-        // 평소에는 조용히 두고, 30초를 넘겨 오래 걸릴 때만 상황을 알려준다
+        // [2026-09-19 변경] 5초부터 경과 시간을 보여줍니다.
+        //   화면이 멈춘 것처럼 보이지 않게 하려는 목적입니다.
         if (sec >= 60) el.innerText = `${sec}초째 기다리는 중… AI 담당관에게 요청이 아주 많이 몰렸어요. 조금만 더 기다려주세요.`;
         else if (sec >= 30) el.innerText = `${sec}초째 기다리는 중… 차례를 기다리고 있어요.`;
+        else if (sec >= 5) el.innerText = `${sec}초째 열심히 검토하는 중이에요…`;
     }, 1000);
 }
 
@@ -327,7 +364,7 @@ ${photoFile ? "학생이 직접 찍은 현장 사진이 함께 첨부되어 있�
 - 정답을 바로 알려주지 말고, 학생이 스스로 생각하도록 질문을 섞어줘.
 - 초등학교 4학년이 이해할 수 있는 쉬운 말로, 3문장 이내로 다정하게 써줘.`;
 
-        const resText = await window.callGeminiAPI(prompt, inlineData);
+        const resText = await window.callGeminiAPI(prompt, inlineData, { fast: true });   // [변경] 가벼운 조언 → 빠른 모드
         adviceArea.innerHTML = `<strong>💡 AI 비서의 힌트:</strong><br>${resText.replace(/\n/g, '<br>')}`;
 
     } catch (e) {
@@ -640,11 +677,13 @@ window.getAIConsulting = async function() {
 홍보 대상(누구에게): ${target}
 핵심 슬로건: ${slogan}
 
-이 기획에서 잘한 점을 먼저 구체적으로 칭찬해줘.
-그다음 타겟에게 잘 닿으려면 어떤 매체(포스터, 영상, 안내 방송, 학교 게시판 등)를 쓰면 좋을지 한 가지 추천하고 이유도 짧게 알려줘.
-초등학교 4학년이 이해할 수 있는 쉬운 말로 3문장 이내로 다정하게 써줘.`;
+이 기획에 대해 아래 세 가지를 순서대로 알려줘.
+1) 잘한 점: 홍보물·홍보 대상·슬로건 중에서 특히 잘 생각한 점을 구체적으로 칭찬해줘.
+2) 슬로건 다듬기: 지금 슬로건의 좋은 점을 짚어준 뒤, 홍보 대상의 눈에 더 잘 띄도록 고친 슬로건을 한 가지 제안해줘. 제안하는 슬로건은 따옴표로 감싸서 보여줘.
+3) 매체 추천: 홍보 대상에게 잘 닿을 매체(포스터, 영상, 안내 방송, 학교 게시판 등)를 한 가지 추천하고 이유도 짧게 알려줘.
+초등학교 4학년이 이해할 수 있는 쉬운 말로, 다정하게 4문장 이내로 써줘.`;
 
-        const answer = await window.callGeminiAPI(prompt);
+        const answer = await window.callGeminiAPI(prompt, null, { fast: true });   // [변경] 가벼운 조언 → 빠른 모드
         resText.innerHTML = answer.replace(/\n/g, '<br>');
 
     } catch (e) {
