@@ -50,7 +50,7 @@ window.JUDGE_KEY_DOC = "_judge_master";
 
 // AI 모델 기본값. 교사용 설정에 저장된 값이 있으면 '항상 그 값이 우선'합니다.
 // 이 값은 설정이 하나도 없을 때만 쓰이는 예비값입니다.
-window.DEFAULT_AI_MODEL = "gemini-3.8-flash";
+window.DEFAULT_AI_MODEL = "gemini-3.6-flash";
 
 window.isTeacherMode = false; window.dynamicApiKey = ""; window.dynamicApiKeys = []; window.dynamicApiModel = ""; window.classKey = ''; window.userKey = ''; window.currentUserId = ''; 
 window.gameState = { budget: 500, visitorCount: 0, reputation: 0, satisfaction: 0, submittedProposals: [], problems: [], promoBoard: [], marketingCampaigns: [], builtBuildings: [], mapMarkers: [], mapCenter: null, aiUsage: { date: '', advice: 0, consulting: 0 } };

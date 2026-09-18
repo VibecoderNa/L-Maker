@@ -3,6 +3,7 @@
 //        2) 제안서 버전 이력(최대 3차) 저장
 //        3) 429 쿨다운 / 503 지수 백오프 / 잘못된 키 자동 제외
 //        4) AI 비서 힌트에 사진 자료 다시 반영
+//        5) [보완] 모델 변경 시 이전 모델 기록 자동 초기화 / ** 기호 정리
 
 window.isAILoading = false;
 
@@ -12,6 +13,21 @@ window.MAX_PROPOSAL_VERSIONS = 3;
 // 키 상태 관리 (429 쿨다운 / 사용 불가 키)
 window.apiKeyCooldowns = {};   // { 키: 쿨다운 해제 시각(ms) }
 window.apiKeyDisabled = {};    // { 키: true }
+
+// ==========================================
+// [2026-09-19 보완] 모델이 바뀌면 이전 모델에서 얻은 '기억'을 지운다
+//   · 한도(429)는 모델마다 따로 계산되므로, 옛 모델에서 막힌 키도 새 모델에서는 쓸 수 있습니다.
+//   · "MINIMAL을 모른다" 같은 메모도 옛 모델 이야기이므로 지웁니다.
+//   → 선생님이 수업 중 모델을 바꿔도 학생이 새로고침할 필요가 없습니다.
+// ==========================================
+window.aiStateModel = null;   // 지금 기억하고 있는 모델 이름
+
+window.resetAIModelState = function() {
+    window.apiKeyCooldowns = {};
+    window.apiKeyDisabled = {};
+    window.geminiFastThinkingLevel = undefined;   // 다음 요청에서 MINIMAL부터 다시 시도
+    window.geminiUseThinkingConfig = undefined;   // 다음 요청에서 생각 수준 설정을 다시 사용
+};
 
 // ==========================================
 // [2026-09-19 추가] AI 대기 시간 상한 (숫자만 고치면 됩니다)
@@ -30,7 +46,6 @@ window.AI_MAX_503_TRIES           = 4;      // 서버 혼잡(503) 총 재시도 
 //     3) AI 홍보 컨설팅      4) 홍보 기획안 1차 검토 (ui.js)
 //
 //   사용법: 아래 배열에 "개념: 설명" 형태로 한 줄씩 추가하세요.
-//   비어 있으면(지금 상태) AI 프롬프트는 예전과 완전히 동일하게 동작합니다.
 // ==========================================
 window.LEARNING_CONCEPTS = [
     // 예시)
@@ -38,13 +53,21 @@ window.LEARNING_CONCEPTS = [
     // "공공 기관: 주민 모두의 편안하고 안전한 생활을 위해 세운 곳. 시청, 경찰서, 소방서 등.",
 ];
 
-// 위 배열을 AI에게 전달할 문장으로 만들어 준다 (비어 있으면 아무것도 붙이지 않음)
+// [2026-09-19 보완] 모든 AI 요청에 붙는 '꾸밈 기호 금지' 규칙
+//   AI가 **굵게** 같은 기호를 쓰면 학생 화면에 별표가 그대로 보였습니다.
+window.AI_PLAIN_TEXT_RULE = '\n\n※ 별표(**)나 샵(#) 같은 꾸밈 기호는 쓰지 말고, 평범한 문장으로만 써줘.';
+
+// 위 배열을 AI에게 전달할 문장으로 만들어 준다
+// [2026-09-19 보완] 학습 내용이 비어 있어도 '꾸밈 기호 금지' 규칙은 항상 붙습니다.
 window.buildLearningBlock = function() {
-    if (!Array.isArray(window.LEARNING_CONCEPTS) || window.LEARNING_CONCEPTS.length === 0) return '';
-    return '\n\n[우리 반이 수업에서 배운 내용]\n'
-        + window.LEARNING_CONCEPTS.map(s => '- ' + s).join('\n')
-        + '\n※ 이 낱말들을 억지로 나열하지 마. 학생의 글과 관련 있는 것만 1~2가지 골라,'
-        + ' 초등학교 4학년이 알아들을 쉬운 말로 자연스럽게 녹여서 써줘.';
+    let block = '';
+    if (Array.isArray(window.LEARNING_CONCEPTS) && window.LEARNING_CONCEPTS.length > 0) {
+        block = '\n\n[우리 반이 수업에서 배운 내용]\n'
+            + window.LEARNING_CONCEPTS.map(s => '- ' + s).join('\n')
+            + '\n※ 이 낱말들을 억지로 나열하지 마. 학생의 글과 관련 있는 것만 1~2가지 골라,'
+            + ' 초등학교 4학년이 알아들을 쉬운 말로 자연스럽게 녹여서 써줘.';
+    }
+    return block + window.AI_PLAIN_TEXT_RULE;
 };
 
 // 로딩 중 보여줄 학습 팁 (4학년 사회 '우리 지역' 관련 개념)
@@ -132,6 +155,21 @@ window.getUsableApiKeys = function() {
 //   제안서·홍보 심사처럼 판정이 필요한 곳에서는 쓰지 않습니다.
 window.callGeminiAPI = async function(prompt, inlineData = null, options = {}) {
     const fast = options && options.fast === true;
+
+    // 교사용 설정에 저장된 모델이 항상 우선입니다. 아래 값은 설정이 없을 때만 쓰는 예비값입니다.
+    // [2026-09-19 보완] 예비값 3.8 → 3.6 (3.8은 출시 직후라 503이 잦음)
+    const model = window.dynamicApiModel || window.DEFAULT_AI_MODEL || "gemini-3.6-flash";
+
+    // [2026-09-19 보완] 모델이 바뀌었으면 이전 모델의 기록(쿨다운·생각 수준 메모)을 지운다
+    //   ※ 키를 고르기 '전에' 해야 옛 모델에서 막힌 키도 다시 쓸 수 있습니다.
+    if (window.aiStateModel !== model) {
+        if (window.aiStateModel) {
+            console.info(`[AI] 모델이 ${window.aiStateModel} → ${model}(으)로 바뀌어 이전 모델의 기록을 지웁니다.`);
+        }
+        window.resetAIModelState();
+        window.aiStateModel = model;
+    }
+
     const allKeys = window.getUsableApiKeys();
     if (allKeys.length === 0) {
         const e = new Error("NO_API_KEY");
@@ -155,8 +193,6 @@ window.callGeminiAPI = async function(prompt, inlineData = null, options = {}) {
         throw e;
     }
 
-    // 교사용 설정에 저장된 모델이 항상 우선입니다. 아래 값은 설정이 없을 때만 쓰는 예비값입니다.
-    const model = window.dynamicApiModel || window.DEFAULT_AI_MODEL || "gemini-3.8-flash";
     const parts = [{ text: prompt }];
     if (inlineData) parts.push({ inlineData: inlineData });
 
@@ -235,13 +271,15 @@ window.callGeminiAPI = async function(prompt, inlineData = null, options = {}) {
                     const text = window.extractGeminiText(result);
                     const finishReason = result?.candidates?.[0]?.finishReason || "";
 
-                    // (1) 길이 제한에 걸려 끊긴 경우 → 한도를 늘려 한 번 더 요청
+                    // (1) 길이 제한에 걸려 끊긴 경우 → 한도를 늘려 '이번 요청만' 한 번 더 보낸다
+                    // [2026-09-19 보완] 예전에는 여기서 생각 수준 설정을 '접속 내내' 꺼버려서,
+                    //   그 뒤의 모든 요청이 기본(더 높은) 생각 수준으로 가며 오히려 느려졌습니다.
+                    //   이제는 설정은 그대로 두고, 이번 한 번만 길이 한도를 8192로 늘립니다.
                     if (finishReason === "MAX_TOKENS" && !retriedLonger) {
                         retriedLonger = true;
-                        window.geminiUseThinkingConfig = false;   // 생각 과정이 길이를 잡아먹는 것을 막음
-                        body = buildBody(false, 8192);
-                        console.warn("[AI] 답변이 길이 제한에 걸렸습니다. 한도를 늘려 다시 요청합니다.");
-                        attempt--;   // [추가] 이 재요청은 재시도 횟수로 세지 않는다
+                        body = buildBody(window.geminiUseThinkingConfig, 8192);
+                        console.warn("[AI] 답변이 길이 제한에 걸렸습니다. 이번 요청만 한도를 늘려 다시 요청합니다.");
+                        attempt--;   // 이 재요청은 재시도 횟수로 세지 않는다
                         continue;
                     }
 
@@ -291,7 +329,6 @@ window.callGeminiAPI = async function(prompt, inlineData = null, options = {}) {
                 if (response.status >= 500) {
                     // [2026-09-19 변경] 503은 '구글 쪽 모델 혼잡'입니다.
                     //   키를 바꿔도 결과가 같으므로, 키 개수와 상관없이 총 재시도 횟수를 제한합니다.
-                    //   (예전에는 키 5개 × 3회 = 15번을 전부 시도해 몇 분씩 걸렸습니다)
                     busyTries++;
                     console.warn(`[AI] 구글 서버 혼잡(${response.status}). 재시도 ${busyTries}/${maxBusyTries}.`, detail);
                     lastError = new Error(`SERVER_${response.status}`);
@@ -312,7 +349,7 @@ window.callGeminiAPI = async function(prompt, inlineData = null, options = {}) {
                         console.warn("[AI] 이 모델은 MINIMAL 생각 수준을 지원하지 않습니다. LOW로 내려 다시 시도합니다.");
                         window.geminiFastThinkingLevel = "LOW";
                         body = buildBody(window.geminiUseThinkingConfig);
-                        attempt--;   // [추가] 이 재요청은 재시도 횟수로 세지 않는다
+                        attempt--;   // 이 재요청은 재시도 횟수로 세지 않는다
                         continue;
                     }
 
@@ -321,7 +358,7 @@ window.callGeminiAPI = async function(prompt, inlineData = null, options = {}) {
                         console.warn("[AI] 이 모델은 사고 수준 설정을 지원하지 않습니다. 설정을 빼고 다시 시도합니다.");
                         window.geminiUseThinkingConfig = false;
                         body = buildBody(false);
-                        attempt--;   // [추가] 이 재요청은 재시도 횟수로 세지 않는다
+                        attempt--;   // 이 재요청은 재시도 횟수로 세지 않는다
                         continue;
                     }
                 }
@@ -383,7 +420,6 @@ window.showAILoading = function() {
         if (!el) return;
         const sec = Math.floor((Date.now() - startedAt) / 1000);
         // [2026-09-19 변경] 5초부터 경과 시간을 보여줍니다.
-        //   화면이 멈춘 것처럼 보이지 않게 하려는 목적입니다.
         if (sec >= 60) el.innerText = `${sec}초째 기다리는 중… AI 담당관에게 요청이 아주 많이 몰렸어요. 조금만 더 기다려주세요.`;
         else if (sec >= 30) el.innerText = `${sec}초째 기다리는 중… 차례를 기다리고 있어요.`;
         else if (sec >= 5) el.innerText = `${sec}초째 열심히 검토하는 중이에요…`;
@@ -444,8 +480,9 @@ ${photoFile ? "학생이 직접 찍은 현장 사진이 함께 첨부되어 있�
 - 정답을 바로 알려주지 말고, 학생이 스스로 생각하도록 질문을 섞어줘.
 - 초등학교 4학년이 이해할 수 있는 쉬운 말로, 3문장 이내로 다정하게 써줘.${window.buildLearningBlock()}`;
 
-        const resText = await window.callGeminiAPI(prompt, inlineData, { fast: true });   // [변경] 가벼운 조언 → 빠른 모드
-        adviceArea.innerHTML = `<strong>💡 AI 비서의 힌트:</strong><br>${resText.replace(/\n/g, '<br>')}`;
+        const resText = await window.callGeminiAPI(prompt, inlineData, { fast: true });   // 가벼운 조언 → 빠른 모드
+        // [2026-09-19 보완] AI 답변을 안전하게 화면에 넣는다 (<, > 등이 화면을 깨뜨리지 않도록)
+        adviceArea.innerHTML = `<strong>💡 AI 비서의 힌트:</strong><br>${window.aiTextToHtml(resText)}`;
 
     } catch (e) {
         console.error("AI 힌트 오류:", e);
@@ -513,10 +550,6 @@ window.submitProblemToBoard = async function() {
 
 // ==========================================
 // 1단계: 해결 제안서 제출 (AI 1차 검토 → 선생님 최종 심사)
-// ==========================================
-// ==========================================
-// 1단계: 해결 제안서 제출 (AI 1차 검토 → 선생님 최종 심사)
-// [2026-09-19 변경]
 //   AI가 '적합 / 보완필요'를 판정합니다.
 //   - 적합    : 예상 예산 50~150G를 제안하고 선생님께 전달
 //   - 보완필요 : 예산 0G. 제출하지 않고 학생에게 바로 고칠 기회를 줍니다.
@@ -532,7 +565,7 @@ window.submitProposal = async function() {
     const text = document.getElementById('proposalText').value.trim();
     if (text.length < 20) return window.showNotification("제안서를 조금 더 자세히 작성해주세요.");
 
-    window.clearAIReviseBox('proposalText');   // [추가] 지난번 보완 요청 안내 지우기
+    window.clearAIReviseBox('proposalText');   // 지난번 보완 요청 안내 지우기
 
     window.isAILoading = true;
     window.showAILoading();
@@ -547,7 +580,7 @@ window.submitProposal = async function() {
             }
         }
 
-        // ── [변경] 판정(적합/보완필요)을 요구하는 프롬프트 ──
+        // ── 판정(적합/보완필요)을 요구하는 프롬프트 ──
         const prompt = `너는 초등학교 4학년 학생이 낸 '지역 문제 해결 제안서'를 1차로 검토하는 AI 담당관이야.
 최종 심사는 선생님이 하시고, 너는 선생님께 전달할 1차 의견을 쓰는 역할이야.
 무조건 칭찬만 하면 안 돼. 기준에 맞지 않으면 분명하게 '보완필요'로 판정해야 해.
@@ -581,7 +614,7 @@ window.submitProposal = async function() {
 
         const resText = await window.callGeminiAPI(prompt);
 
-        // ── [변경] AI의 판정과 예상 예산을 읽어낸다 ──
+        // ── AI의 판정과 예상 예산을 읽어낸다 ──
         const parsedHead = window.splitAIHead(resText);
         let aiVerdict = window.detectAIVerdict(parsedHead.head);
         let aiFeedback = parsedHead.body || resText.trim();
@@ -599,7 +632,7 @@ window.submitProposal = async function() {
             ? (isNaN(headNum) ? 100 : Math.min(150, Math.max(50, headNum)))
             : 0;   // 보완이 필요하면 예산을 제안하지 않는다
 
-        // ── [추가] 보완 필요 → 제출하지 않고 바로 고칠 기회를 준다 ──
+        // ── 보완 필요 → 제출하지 않고 바로 고칠 기회를 준다 ──
         if (aiVerdict === 'revise') {
             window.hideAILoading();
             window.showAIReviseBox('proposalText', aiFeedback);
@@ -763,8 +796,9 @@ window.getAIConsulting = async function() {
 3) 매체 추천: 홍보 대상에게 잘 닿을 매체(포스터, 영상, 안내 방송, 학교 게시판 등)를 한 가지 추천하고 이유도 짧게 알려줘.
 초등학교 4학년이 이해할 수 있는 쉬운 말로, 다정하게 4문장 이내로 써줘.${window.buildLearningBlock()}`;
 
-        const answer = await window.callGeminiAPI(prompt, null, { fast: true });   // [변경] 가벼운 조언 → 빠른 모드
-        resText.innerHTML = answer.replace(/\n/g, '<br>');
+        const answer = await window.callGeminiAPI(prompt, null, { fast: true });   // 가벼운 조언 → 빠른 모드
+        // [2026-09-19 보완] AI 답변을 안전하게 화면에 넣는다
+        resText.innerHTML = window.aiTextToHtml(answer);
 
     } catch (e) {
         console.error("AI 컨설팅 오류:", e);
@@ -777,8 +811,28 @@ window.getAIConsulting = async function() {
 }
 
 // ==========================================
-// [2026-09-19 추가] AI 답변 해석 도우미
+// AI 답변 해석 도우미
 // ==========================================
+
+// [2026-09-19 보완] AI가 쓴 꾸밈 기호를 걷어낸다
+//   **굵게** → 굵게 / "### 제목" → "제목" / "* 항목" → "• 항목"
+//   여기서 한 번에 정리하므로 힌트·컨설팅·제안서·홍보 의견 모두에 적용됩니다.
+window.cleanAIText = function(raw) {
+    return String(raw || '')
+        .replace(/\*\*(.+?)\*\*/g, '$1')      // **굵게** → 굵게
+        .replace(/__(.+?)__/g, '$1')          // __굵게__ → 굵게
+        .replace(/\*\*/g, '')                 // 짝이 안 맞고 남은 **
+        .replace(/^[ \t]{0,3}#{1,6}[ \t]+/gm, '')   // 줄 맨 앞의 # 제목 기호
+        .replace(/^[ \t]*[*\-][ \t]+/gm, '• ')      // 줄 맨 앞의 * 또는 - 목록 기호
+        .trim();
+};
+
+// [2026-09-19 보완] AI 답변을 화면에 안전하게 넣기 위한 변환 (<, > 등을 글자로 바꿈)
+window.aiTextToHtml = function(raw) {
+    return String(raw || '')
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        .replace(/\n/g, '<br>');
+};
 
 // AI 답변 조각(parts)을 전부 합쳐서 글자만 꺼낸다.
 // ※ '생각 과정(thought)' 조각은 제외합니다.
@@ -786,11 +840,11 @@ window.getAIConsulting = async function() {
 window.extractGeminiText = function(result) {
     const parts = result?.candidates?.[0]?.content?.parts;
     if (!Array.isArray(parts)) return "";
-    return parts
+    const joined = parts
         .filter(p => p && p.thought !== true && typeof p.text === 'string')
         .map(p => p.text)
-        .join('')
-        .trim();
+        .join('');
+    return window.cleanAIText(joined);   // [2026-09-19 보완] 꾸밈 기호 정리
 };
 
 // 첫 줄에서 판정을 읽는다 → 'ok' / 'revise' / null(형식을 안 지킨 경우)
