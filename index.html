@@ -4,12 +4,15 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>로컬 메이커 (Local Maker) - 통합 관리 시스템</title>
-    <link href="https://fonts.googleapis.com/css2?family=Pretendard:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <!-- Pretendard 글꼴 - 공식 배포처(jsDelivr). Google Fonts에는 이 글꼴이 없어 불러오기가 실패했었습니다. -->
+    <link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard-dynamic-subset.min.css" />
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.js"></script>
+    <!-- 파일 실행 모드에서 대체 배경 지도를 쓰기 위한 연결 플러그인 (Leaflet ↔ MapLibre) -->
+    <script src="https://cdn.jsdelivr.net/npm/@maplibre/maplibre-gl-leaflet@0.1.4/leaflet-maplibre-gl.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
     <link rel="stylesheet" href="/src/style.css" />
@@ -75,6 +78,14 @@
                 <input type="number" id="numInput" placeholder="나의 번호 (숫자 1, 2, 3...)">
             </div>
             <button class="action-btn" onclick="window.initSystem(false)">게임 시작 / 이어서 하기 <i class="fa-solid fa-arrow-right-to-bracket"></i></button>
+
+            <!-- ★ 요강 18쪽: 화면 내 출처 표기 -->
+            <div style="margin-top: 18px; font-size: 13px; color: var(--text-muted);">
+                <span style="cursor: pointer; text-decoration: underline; text-underline-offset: 3px;"
+                      onclick="document.getElementById('licenseModal').classList.add('active')">
+                    <i class="fa-solid fa-scale-balanced"></i> 오픈소스 라이선스 및 자료 출처
+                </span>
+            </div>
         </div>
     </div>
 
@@ -136,6 +147,12 @@
                 <div id="logoutMenu" style="display: none; position: absolute; top: -50px; left: 0; width: 100%; background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 8px; padding: 12px; box-shadow: 0 -4px 15px rgba(0,0,0,0.15); z-index: 20;">
                     <div style="color: #ef4444; font-weight: bold; font-size: 14px;" onclick="window.executeLogout(event)"><i class="fa-solid fa-power-off"></i> 안전하게 로그아웃</div>
                 </div>
+            </div>
+
+            <!-- ★ 요강 18쪽: 화면 내 출처 표기 -->
+            <div style="margin-top: 10px; text-align: center; font-size: 12px; color: var(--text-muted); cursor: pointer;"
+                 onclick="document.getElementById('licenseModal').classList.add('active')">
+                <i class="fa-solid fa-scale-balanced"></i> 오픈소스 라이선스 및 자료 출처
             </div>
         </div>
 
@@ -656,6 +673,113 @@
             <p style="font-size:13px; color:var(--text-muted); margin-bottom:15px;">출발지 또는 도착지로 지정할 장소를 선택하세요.</p>
             <div id="inventoryList" style="max-height: 300px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px;"></div>
             <button class="btn btn-cancel" style="width:100%; margin-top:15px;" onclick="document.getElementById('markerInventoryModal').classList.remove('active')">닫기</button>
+        </div>
+    </div>
+
+    <!-- ══════ ★ 요강 18쪽: 오픈소스 라이선스 및 자료 출처 ══════ -->
+    <div class="modal-overlay" id="licenseModal">
+        <div class="modal-content" style="width: 620px; max-width: 92vw; text-align: left;">
+            <h2 class="modal-title" style="text-align:center;"><i class="fa-solid fa-scale-balanced"></i> 오픈소스 라이선스 및 자료 출처</h2>
+            <p style="font-size:13px; color:var(--text-muted); line-height:1.7; background:#f8fafc; padding:12px 14px; border-radius:8px; border-left:3px solid var(--primary); margin-top:0;">
+                이 소프트웨어는 아래의 공개 자료와 오픈소스 라이브러리를 사용하여 제작하였습니다.
+                각 자료는 해당 라이선스가 허용하는 범위에서 이용하였으며, 그 외 화면 구성·기능·콘텐츠는 모두 직접 제작하였습니다.
+            </p>
+
+                <h4 style="margin:22px 0 4px; color:var(--primary); font-size:15px; border-bottom:2px solid var(--primary); padding-bottom:6px;">1. 지도 및 위치 정보</h4>
+                    <div style="padding:12px 0; border-bottom:1px solid var(--border-color);">
+                        <div style="font-weight:700; color:var(--text-main); font-size:14px;">OpenStreetMap 지도 타일 · 지도 데이터</div>
+                        <div style="font-size:13px; color:var(--text-muted); margin-top:3px;">용도: 지역 지도 표시, 기호 배치의 배경 지도</div>
+                        <div style="font-size:13px; color:var(--primary); margin-top:3px;">라이선스: Open Database License (ODbL) 1.0 / © OpenStreetMap contributors</div>
+                        <div style="font-size:12px; color:var(--text-muted); margin-top:3px; word-break:break-all;">https://www.openstreetmap.org/copyright</div>
+                    </div>
+                    <div style="padding:12px 0; border-bottom:1px solid var(--border-color);">
+                        <div style="font-weight:700; color:var(--text-main); font-size:14px;">OpenFreeMap</div>
+                        <div style="font-size:13px; color:var(--text-muted); margin-top:3px;">용도: 파일 실행(오프라인) 모드에서의 배경 지도 표시</div>
+                        <div style="font-size:13px; color:var(--primary); margin-top:3px;">라이선스: 무료 공개 서비스 / 지도 자료는 OpenStreetMap (ODbL)</div>
+                        <div style="font-size:12px; color:var(--text-muted); margin-top:3px; word-break:break-all;">https://openfreemap.org/</div>
+                    </div>
+                    <div style="padding:12px 0; border-bottom:1px solid var(--border-color);">
+                        <div style="font-weight:700; color:var(--text-main); font-size:14px;">Nominatim</div>
+                        <div style="font-size:13px; color:var(--text-muted); margin-top:3px;">용도: 우리 학교 위치 검색</div>
+                        <div style="font-size:13px; color:var(--primary); margin-top:3px;">라이선스: OpenStreetMap 기반 (ODbL) / Nominatim 이용 정책 준수</div>
+                        <div style="font-size:12px; color:var(--text-muted); margin-top:3px; word-break:break-all;">https://operations.osmfoundation.org/policies/nominatim/</div>
+                    </div>
+                    <div style="padding:12px 0; border-bottom:1px solid var(--border-color);">
+                        <div style="font-weight:700; color:var(--text-main); font-size:14px;">Mapzen Terrain Tiles (Terrarium)</div>
+                        <div style="font-size:13px; color:var(--text-muted); margin-top:3px;">용도: 3D 지형도의 땅 높이 표현</div>
+                        <div style="font-size:13px; color:var(--primary); margin-top:3px;">라이선스: AWS Open Data 공개 자료 / 공개 지형 자료 기반</div>
+                        <div style="font-size:12px; color:var(--text-muted); margin-top:3px; word-break:break-all;">https://registry.opendata.aws/terrain-tiles/</div>
+                    </div>
+                    <div style="padding:12px 0; border-bottom:1px solid var(--border-color);">
+                        <div style="font-weight:700; color:var(--text-main); font-size:14px;">Open-Meteo Elevation API</div>
+                        <div style="font-size:13px; color:var(--text-muted); margin-top:3px;">용도: 두 지점 사이 땅의 높낮이 조회</div>
+                        <div style="font-size:13px; color:var(--primary); margin-top:3px;">라이선스: CC BY 4.0 (비상업적 무료 이용)</div>
+                        <div style="font-size:12px; color:var(--text-muted); margin-top:3px; word-break:break-all;">https://open-meteo.com/</div>
+                    </div>
+                <h4 style="margin:22px 0 4px; color:var(--primary); font-size:15px; border-bottom:2px solid var(--primary); padding-bottom:6px;">2. 화면 구성 라이브러리</h4>
+                    <div style="padding:12px 0; border-bottom:1px solid var(--border-color);">
+                        <div style="font-weight:700; color:var(--text-main); font-size:14px;">Leaflet 1.9.4</div>
+                        <div style="font-size:13px; color:var(--text-muted); margin-top:3px;">용도: 2D 지도 표시 및 기호·범례 기능</div>
+                        <div style="font-size:13px; color:var(--primary); margin-top:3px;">라이선스: BSD 2-Clause License</div>
+                        <div style="font-size:12px; color:var(--text-muted); margin-top:3px; word-break:break-all;">https://github.com/Leaflet/Leaflet/blob/main/LICENSE</div>
+                    </div>
+                    <div style="padding:12px 0; border-bottom:1px solid var(--border-color);">
+                        <div style="font-weight:700; color:var(--text-main); font-size:14px;">MapLibre GL JS 3.6.2</div>
+                        <div style="font-size:13px; color:var(--text-muted); margin-top:3px;">용도: 3D 지형도 표시</div>
+                        <div style="font-size:13px; color:var(--primary); margin-top:3px;">라이선스: BSD 3-Clause License</div>
+                        <div style="font-size:12px; color:var(--text-muted); margin-top:3px; word-break:break-all;">https://github.com/maplibre/maplibre-gl-js/blob/main/LICENSE.txt</div>
+                    </div>
+                    <div style="padding:12px 0; border-bottom:1px solid var(--border-color);">
+                        <div style="font-weight:700; color:var(--text-main); font-size:14px;">maplibre-gl-leaflet 0.1.4</div>
+                        <div style="font-size:13px; color:var(--text-muted); margin-top:3px;">용도: Leaflet 지도에 대체 배경 지도를 연결</div>
+                        <div style="font-size:13px; color:var(--primary); margin-top:3px;">라이선스: ISC License</div>
+                        <div style="font-size:12px; color:var(--text-muted); margin-top:3px; word-break:break-all;">https://github.com/maplibre/maplibre-gl-leaflet/blob/main/LICENSE.txt</div>
+                    </div>
+                    <div style="padding:12px 0; border-bottom:1px solid var(--border-color);">
+                        <div style="font-weight:700; color:var(--text-main); font-size:14px;">Chart.js</div>
+                        <div style="font-size:13px; color:var(--text-muted); margin-top:3px;">용도: 땅의 높낮이 그래프</div>
+                        <div style="font-size:13px; color:var(--primary); margin-top:3px;">라이선스: MIT License</div>
+                        <div style="font-size:12px; color:var(--text-muted); margin-top:3px; word-break:break-all;">https://github.com/chartjs/Chart.js/blob/master/LICENSE.md</div>
+                    </div>
+                    <div style="padding:12px 0; border-bottom:1px solid var(--border-color);">
+                        <div style="font-weight:700; color:var(--text-main); font-size:14px;">canvas-confetti 1.6.0</div>
+                        <div style="font-size:13px; color:var(--text-muted); margin-top:3px;">용도: 인프라 건설 완료 효과</div>
+                        <div style="font-size:13px; color:var(--primary); margin-top:3px;">라이선스: ISC License</div>
+                        <div style="font-size:12px; color:var(--text-muted); margin-top:3px; word-break:break-all;">https://github.com/catdad/canvas-confetti/blob/master/LICENSE</div>
+                    </div>
+                <h4 style="margin:22px 0 4px; color:var(--primary); font-size:15px; border-bottom:2px solid var(--primary); padding-bottom:6px;">3. 글꼴 및 아이콘</h4>
+                    <div style="padding:12px 0; border-bottom:1px solid var(--border-color);">
+                        <div style="font-weight:700; color:var(--text-main); font-size:14px;">Pretendard</div>
+                        <div style="font-size:13px; color:var(--text-muted); margin-top:3px;">용도: 화면 전체 기본 글꼴</div>
+                        <div style="font-size:13px; color:var(--primary); margin-top:3px;">라이선스: SIL Open Font License 1.1</div>
+                        <div style="font-size:12px; color:var(--text-muted); margin-top:3px; word-break:break-all;">https://github.com/orioncactus/pretendard/blob/main/LICENSE</div>
+                    </div>
+                    <div style="padding:12px 0; border-bottom:1px solid var(--border-color);">
+                        <div style="font-weight:700; color:var(--text-main); font-size:14px;">Font Awesome Free 6.5.1</div>
+                        <div style="font-size:13px; color:var(--text-muted); margin-top:3px;">용도: 메뉴 및 기능 아이콘 전체</div>
+                        <div style="font-size:13px; color:var(--primary); margin-top:3px;">라이선스: 아이콘 CC BY 4.0 / 글꼴 SIL OFL 1.1 / 코드 MIT</div>
+                        <div style="font-size:12px; color:var(--text-muted); margin-top:3px; word-break:break-all;">https://fontawesome.com/license/free</div>
+                    </div>
+                <h4 style="margin:22px 0 4px; color:var(--primary); font-size:15px; border-bottom:2px solid var(--primary); padding-bottom:6px;">4. 데이터베이스 및 AI</h4>
+                    <div style="padding:12px 0; border-bottom:1px solid var(--border-color);">
+                        <div style="font-weight:700; color:var(--text-main); font-size:14px;">Firebase JavaScript SDK 10.8.1</div>
+                        <div style="font-size:13px; color:var(--text-muted); margin-top:3px;">용도: 학급 자료 실시간 저장 및 공유 (Firestore)</div>
+                        <div style="font-size:13px; color:var(--primary); margin-top:3px;">라이선스: Apache License 2.0</div>
+                        <div style="font-size:12px; color:var(--text-muted); margin-top:3px; word-break:break-all;">https://github.com/firebase/firebase-js-sdk/blob/master/LICENSE</div>
+                    </div>
+                    <div style="padding:12px 0; border-bottom:1px solid var(--border-color);">
+                        <div style="font-weight:700; color:var(--text-main); font-size:14px;">Google Gemini API</div>
+                        <div style="font-size:13px; color:var(--text-muted); margin-top:3px;">용도: AI 비서 힌트, 제안서·홍보 기획안 1차 검토</div>
+                        <div style="font-size:13px; color:var(--primary); margin-top:3px;">라이선스: Google Gemini API 추가 서비스 약관 준수</div>
+                        <div style="font-size:12px; color:var(--text-muted); margin-top:3px; word-break:break-all;">https://ai.google.dev/gemini-api/terms</div>
+                    </div>
+
+            <div style="font-size:12px; color:var(--text-muted); margin-top:18px; line-height:1.7;">
+                ※ 지도 화면에는 OpenStreetMap 저작자 표시가 지도 우측 하단에 함께 표시됩니다.
+            </div>
+
+            <button class="btn btn-cancel" style="width:100%; margin-top:20px;"
+                    onclick="document.getElementById('licenseModal').classList.remove('active')">닫기</button>
         </div>
     </div>
 

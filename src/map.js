@@ -9,7 +9,100 @@ const map = L.map('map', { zoomControl: false }).setView([initialLat, initialLng
 window.map = map;
 
 L.control.zoom({ position: 'bottomright' }).addTo(map);
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '&copy; OpenStreetMap contributors', maxZoom: 19 }).addTo(map);
+
+// ==========================================
+// [2026-09-20 추가] 배경 지도(타일) 준비
+//   OpenStreetMap 타일 서버는 요청이 '어디서 왔는지'(Referer)를 확인합니다.
+//   파일을 더블클릭해 여는 file:// 방식에서는 이 정보가 없어 403으로 거부됩니다.
+//   그래서 그때만 OpenFreeMap(등록·키 불필요, 무제한 무료)으로 자동 전환합니다.
+//   ※ 인터넷 주소(https)로 접속할 때는 지금까지와 '완전히 동일하게' 동작합니다.
+// ==========================================
+window.IS_FILE_MODE = (window.location.protocol === 'file:');
+window.OPENFREEMAP_STYLE = 'https://tiles.openfreemap.org/styles/bright';
+
+// 대체 배경 지도 안에 들어 있는 MapLibre 지도 객체를 안전하게 꺼냅니다.
+window.getGlMapOf = function(targetMap) {
+    try {
+        const gl = targetMap && targetMap._baseGlLayer;
+        if (!gl) return null;
+        if (typeof gl.getMaplibreMap === 'function') return gl.getMaplibreMap();
+        return gl._glMap || gl._maplibreMap || null;
+    } catch (e) { return null; }
+};
+
+// 배경 지도에 없는 아이콘 때문에 뜨는 콘솔 경고를 조용히 처리합니다.
+//   (지도 표시에는 영향이 없지만, 경고가 수십 줄 쌓이면 진짜 오류를 놓치기 쉽습니다)
+window.silenceStyleImageWarnings = function(glMap) {
+    if (!glMap || typeof glMap.on !== 'function' || glMap.__warnSilenced) return;
+    glMap.__warnSilenced = true;
+    try {
+        glMap.on('styleimagemissing', function(e) {
+            try {
+                if (e && e.id && !glMap.hasImage(e.id)) {
+                    glMap.addImage(e.id, { width: 1, height: 1, data: new Uint8Array(4) });
+                }
+            } catch (err) { /* 무시 */ }
+        });
+    } catch (e) { /* 무시 */ }
+};
+
+// 탭을 열었을 때 지도를 화면 크기에 맞게 다시 그립니다.
+//   ※ 첫 번째 지도는 '화면에 보이기 전'에 만들어지므로 크기가 0입니다.
+//     Leaflet만 갱신하면 그 안의 배경 지도는 작은 채로 남아 가로 폭이 모자라 보입니다.
+window.refreshBaseLayer = function(targetMap) {
+    if (!targetMap) return;
+    try { targetMap.invalidateSize(); } catch (e) { /* 무시 */ }
+    const glMap = window.getGlMapOf(targetMap);
+    if (glMap) {
+        window.silenceStyleImageWarnings(glMap);
+        try { glMap.resize(); } catch (e) { console.warn('[지도] 배경 지도 크기 조정에 실패했습니다.', e); }
+    }
+};
+
+// 지도 상자의 크기가 바뀌면(사이드바 접기, 창 크기 조절 등) 자동으로 다시 맞춥니다.
+//   ※ 사이드바는 0.3초에 걸쳐 접히는데, 그동안 배경 지도는 예전 폭을 기억하고 있어
+//     오른쪽에 빈 띠가 남았습니다. 이제 크기 변화를 지켜보다가 알아서 고칩니다.
+window.watchMapSize = function(targetMap) {
+    if (!targetMap || targetMap.__sizeWatched) return;
+    if (typeof ResizeObserver !== 'function') return;   // 아주 옛 브라우저는 그냥 넘어감
+    try {
+        const el = targetMap.getContainer();
+        if (!el) return;
+        targetMap.__sizeWatched = true;
+        let timer = null;
+        const observer = new ResizeObserver(function() {
+            clearTimeout(timer);
+            timer = setTimeout(function() { window.refreshBaseLayer(targetMap); }, 120);
+        });
+        observer.observe(el);
+    } catch (e) { /* 감시에 실패해도 지도 동작에는 영향이 없습니다 */ }
+};
+
+window.addBaseLayer = function(targetMap, maxZoom) {
+    window.watchMapSize(targetMap);
+    if (window.IS_FILE_MODE && typeof L.maplibreGL === 'function' && typeof maplibregl !== 'undefined') {
+        try {
+            const glLayer = L.maplibreGL({ style: window.OPENFREEMAP_STYLE }).addTo(targetMap);
+            targetMap._baseGlLayer = glLayer;   // 나중에 크기를 다시 맞출 때 사용
+            setTimeout(function() { window.silenceStyleImageWarnings(window.getGlMapOf(targetMap)); }, 0);
+            try {
+                if (targetMap.attributionControl) {
+                    targetMap.attributionControl.addAttribution('&copy; OpenStreetMap contributors | OpenFreeMap');
+                }
+            } catch (e) { /* 저작자 표시 추가 실패는 지도 동작과 무관 */ }
+            console.info('[지도] 파일 실행 모드입니다. OpenFreeMap 배경 지도를 사용합니다.');
+            return glLayer;
+        } catch (e) {
+            console.warn('[지도] 대체 배경 지도를 쓰지 못해 기본 지도로 전환합니다.', e);
+        }
+    }
+    return L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '&copy; OpenStreetMap contributors',
+        maxZoom: maxZoom || 19
+    }).addTo(targetMap);
+};
+
+window.addBaseLayer(map, 19);
 
 // 기호 고유번호는 시각(ms)으로 만든다.
 // 예전처럼 0,1,2… 로 세면 학생마다 같은 번호가 생겨 서로의 기호가 지워졌습니다.
@@ -367,7 +460,8 @@ window.switchMapTab = function(tabId, element, title) {
     document.getElementById('topbarTitle').innerText = title;
     
     if (tabId === 'stage-map-1') {
-        setTimeout(() => { window.map.invalidateSize(); }, 100);
+        setTimeout(() => { window.refreshBaseLayer(window.map); }, 100);
+        setTimeout(() => { window.refreshBaseLayer(window.map); }, 400);   // 느린 기기 대비 한 번 더
     } 
     else if (tabId === 'stage-map-2') {
         window.switchInnerTab('inner-map-geo', document.querySelector('#stage-map-2 .sub-tab-btn.active') || document.querySelectorAll('#stage-map-2 .sub-tab-btn')[0]);
@@ -388,7 +482,8 @@ window.geoSelection = { a: null, b: null };
 
 window.initGeoMap = function() {
     if(window.geoMapInitStatus) {
-        setTimeout(() => { geoMapObj.invalidateSize(); }, 100);
+        setTimeout(() => { window.refreshBaseLayer(geoMapObj); }, 100);
+        setTimeout(() => { window.refreshBaseLayer(geoMapObj); }, 400);   // 느린 기기 대비 한 번 더
         return;
     }
     
@@ -397,7 +492,7 @@ window.initGeoMap = function() {
 
     geoMapObj = L.map('geoMap', { zoomControl: false }).setView([startLat, startLng], 16);
     L.control.zoom({ position: 'bottomright' }).addTo(geoMapObj);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '&copy; OpenStreetMap contributors' }).addTo(geoMapObj);
+    window.addBaseLayer(geoMapObj);
     geoLayerGroup = L.layerGroup().addTo(geoMapObj);
     
     window.geoMapInitStatus = true;
@@ -519,32 +614,50 @@ window.initElevMap = function() {
     const startLat = window.gameState.mapCenter ? window.gameState.mapCenter.lat : initialLat;
     const startLng = window.gameState.mapCenter ? window.gameState.mapCenter.lng : initialLng;
 
+    // 땅의 높이 자료 (3D 지형 효과에 사용) - 두 방식 모두 같은 자료를 씁니다.
+    const terrainSource = {
+        type: 'raster-dem',
+        tiles: ['https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png'],
+        encoding: 'terrarium',
+        tileSize: 256,
+        maxzoom: 14
+    };
+
+    // 인터넷 주소(https)로 접속했을 때 쓰는 기존 방식 - 지금까지와 동일합니다.
+    const osmStyle = {
+        version: 8,
+        sources: {
+            osm: { type: 'raster', tiles: ['https://a.tile.openstreetmap.org/{z}/{x}/{y}.png'], tileSize: 256 },
+            terrainSource: terrainSource
+        },
+        layers: [{ id: 'osm', type: 'raster', source: 'osm' }],
+        terrain: { source: 'terrainSource', exaggeration: 2.0 }
+    };
+
     elevMapObj = new maplibregl.Map({
         container: 'elevMap',
-        style: {
-            version: 8,
-            sources: {
-                osm: { type: 'raster', tiles: ['https://a.tile.openstreetmap.org/{z}/{x}/{y}.png'], tileSize: 256 },
-                terrainSource: { 
-                    type: 'raster-dem', 
-                    tiles: ['https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png'], 
-                    encoding: 'terrarium', 
-                    tileSize: 256, 
-                    maxzoom: 14 
-                }
-            },
-            layers: [{ id: 'osm', type: 'raster', source: 'osm' }],
-            terrain: { source: 'terrainSource', exaggeration: 2.0 }
-        },
+        // 파일 실행 모드에서는 OpenStreetMap 타일이 거부되므로 OpenFreeMap을 씁니다.
+        style: window.IS_FILE_MODE ? window.OPENFREEMAP_STYLE : osmStyle,
         center: [startLng, startLat], 
         zoom: 16,
         pitch: 60,
         bearing: 0
     });
     
+    window.silenceStyleImageWarnings(elevMapObj);
+
     elevMapObj.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), 'bottom-right');
 
     elevMapObj.on('load', () => {
+        // OpenFreeMap 스타일에는 땅 높이 자료가 없으므로 여기서 직접 붙여 3D 효과를 만듭니다.
+        if (window.IS_FILE_MODE) {
+            try {
+                if (!elevMapObj.getSource('terrainSource')) elevMapObj.addSource('terrainSource', terrainSource);
+                elevMapObj.setTerrain({ source: 'terrainSource', exaggeration: 2.0 });
+            } catch (e) {
+                console.warn('[지도] 3D 지형 효과를 적용하지 못했습니다. 평면으로 표시됩니다.', e);
+            }
+        }
         window.elevMapInitStatus = true;
         refreshElevMarkers();
     });
