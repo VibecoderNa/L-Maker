@@ -41,6 +41,17 @@
             <div class="logo" onclick="window.handleSecretTeacherLogin()" style="justify-content: center; font-size: 32px; cursor: pointer;">
                 <i class="fa-solid fa-map-location-dot"></i> LOCAL MAKER
             </div>
+
+            <!-- ★ 연구대회 요강 필수 항목: 시작 화면의 연구보고서 제목 및 대상학년 -->
+            <div style="margin: 18px 0 22px; padding: 16px 18px; background: #f8fafc; border: 1px solid var(--border-color); border-radius: 12px;">
+                <div style="font-size: 15px; font-weight: 700; color: var(--text-main); line-height: 1.6; word-break: keep-all;">
+                    문제 해결에서 가상 도시 건설까지,<br>AI와 함께하는 지역 성장 시뮬레이터 「L-MAKER」
+                </div>
+                <div style="font-size: 14px; font-weight: 600; color: var(--primary); margin-top: 8px;">
+                    대상 학년: 초등학교 4학년 (사회과)
+                </div>
+            </div>
+
             <h2>지역 행정 시스템 접속</h2>
             <p style="color: var(--text-muted); font-size: 14px; margin-bottom: 0;">선생님이 알려주신 도/지역과 학급코드 4자리, 나의 번호를 입력해주세요.</p>
             
@@ -211,7 +222,7 @@
                             <p style="color:var(--text-muted); font-size:13px;">학교 이름을 검색하여 지정하면, 학생들의 지도 접속 시 초기 화면이 우리 학교를 중심으로 맞춰집니다.</p>
                             
                             <div style="display:flex; gap:10px; margin-top:10px;">
-                                <input type="text" id="schoolSearchInput" placeholder="예: 예천초등학교" onkeydown="if(event.key==='Enter') window.searchSchool()">
+                                <input type="text" id="schoolSearchInput" placeholder="우리 학교 이름을 입력하세요" onkeydown="if(event.key==='Enter') window.searchSchool()">
                                 <button class="action-btn accent-btn" style="width:auto; margin-top:0; white-space:nowrap;" onclick="window.searchSchool()"><i class="fa-solid fa-magnifying-glass"></i> 검색</button>
                             </div>
                             
@@ -653,7 +664,7 @@
     <div class="modal-overlay" id="drawingModal">
         <div class="modal-content">
             <h2 class="modal-title"><i class="fa-solid fa-pen-nib"></i> 기호 <span id="modalModeTitle">만들기</span></h2>
-            <input type="text" id="placeName" placeholder="장소 이름 (예: 예천군청)" autocomplete="off">
+            <input type="text" id="placeName" placeholder="장소 이름 (예: 우리 동네 도서관)" autocomplete="off">
             <input type="text" id="legendDesc" placeholder="이 기호의 뜻 (범례 설명)" autocomplete="off">
             <div class="canvas-container">
                 <span style="font-size: 13px; color: var(--accent); margin-bottom: 8px; font-weight: 600;">아래 스케치북에 기호를 자세하게 그려주세요!</span>
